@@ -1,5 +1,6 @@
 """rio-stac Extension."""
 
+import os
 from dataclasses import dataclass
 from typing import Any, Dict, List, Literal, Optional, Tuple, Union
 
@@ -19,6 +20,13 @@ import datetime
 from pathlib import Path
 import requests
 import morecantile
+
+import logging
+# logger = logging.getLogger()
+# logger = logging.getLogger(__name__)
+logger = logging.getLogger('uvicorn.error')
+# from fastapi.logger import logger
+
 WEB_MERCATOR_TMS = morecantile.tms.get("WebMercatorQuad")
 
 try:
@@ -27,14 +35,14 @@ try:
     import pystac
     from pystac.utils import datetime_to_str, str_to_datetime
     from rio_stac.stac import create_stac_item
-    from pystac import Catalog, Collection, Asset
+    from pystac import Catalog, Collection, Asset, Item
 except ImportError:  # pragma: nocover
     cog_info = None  # type: ignore
     Info = None
     create_stac_item = None  # type: ignore
     pystac = None  # type: ignore
     str_to_datetime = datetime_to_str = None  # type: ignore
-    Catalog = CollectionW = None  # type: ignore
+    # Catalog = Collection = Asset = Item = None  # type: ignore
 
 
 class CreateBody(TypedDict):
@@ -59,6 +67,11 @@ class TitilerLayerMetadata(TypedDict):
     min_zoom: Optional[int]
     max_zoom: Optional[int]
     mosaic: dict[str, Any]
+    assets_urls: List[str]
+    total_assets: Optional[int]
+    app_region: Optional[str]
+    app_provider: Optional[str]
+    app_url: Optional[str]
 
 @dataclass
 class mosaicExtension(FactoryExtension):
@@ -95,24 +108,37 @@ class mosaicExtension(FactoryExtension):
             src_path=Depends(factory.path_dependency),
             dest_path: Annotated[Optional[str], Query(description="Destination path to save the MosaicJSON.")] = None,
             use_metadata_only: Annotated[Optional[bool], Query(description="Destination path to save the MosaicJSON.")] = False,
+            min_zoom: Annotated[Optional[int], Query(description="Min zoom to be used if use_metadata_only is true, default 12")] = 12,
+            max_zoom: Annotated[Optional[int], Query(description="Min zoom to be used if use_metadata_only is true, default 20")] = 20,
         ):
             """Return basic info."""
+            logger.info(F"Collection loading from {src_path}.")
             collection = Collection.from_file(src_path)
-            items = list(collection.get_items())
+            logger.info(F"Collection {collection.title} loaded.")
 
-            items = filter(lambda item: item.assets["visual"] is not None, items)
+            items = list(collection.get_items())
+            logger.info(F"Collection {collection.title} has {len(items)} items.")
+
+
+            items = list(filter(lambda item: item.assets["visual"] is not None, items))
+            logger.info(F"Collection {collection.title} has {len(items)} items with visual asset.")
+
+            assets_urls = []
             data: MosaicJSON
             if(use_metadata_only):
-                data = MosaicJSON.from_urls(assets)
-            else:
-                assets = []
+                features = []
                 for item in items:
-                    assets.append(item.assets["visual"].get_absolute_href())
-                data = MosaicJSON.from_urls(assets)
-
-            print(F"dest: {dest_path} - {dest_path is not None}")
-            if(dest_path is not None):
-                print(F"dest-startWith: {dest_path.startswith('/data/')} - {dest_path.startswith('https://')}")
+                    url = item.assets["visual"].get_absolute_href()
+                    geojson_feature = create_geojson_feature(item.bbox, url)
+                    features.append(geojson_feature)
+                    assets_urls.append(url)
+                data = MosaicJSON.from_features(features, min_zoom, max_zoom)
+            else:
+                for item in items:
+                    assets_urls.append(item.assets["visual"].get_absolute_href())
+                data = MosaicJSON.from_urls(assets_urls)
+            
+            logger.info(F"MosaicJSON created for {collection.title}.")
 
             # map datetime into ISO format
             mapped_intervals : list[list[str]] = []
@@ -129,11 +155,16 @@ class mosaicExtension(FactoryExtension):
                 "intervals": mapped_intervals,
                 "extra_fields": collection.extra_fields,
                 "keywords": collection.keywords,
-                "mosaic": data.model_dump(),
                 "bounds": data.bounds,
                 "center": data.center,
                 "min_zoom": data.minzoom,
-                "max_zoom": data.maxzoom
+                "max_zoom": data.maxzoom,
+                "total_assets": len(assets_urls),
+                "app_region": os.getenv("APP_REGION"),
+                "app_provider": os.getenv("APP_PROVIDER"),
+                "app_url": os.getenv("APP_URL"),
+                "mosaic": data.model_dump(),
+                "assets_urls": assets_urls,
             }
 
 
@@ -174,3 +205,29 @@ class mosaicExtension(FactoryExtension):
                 res["collections"].append(collection.to_dict())
 
             return res
+        
+def create_geojson_feature(
+    bounds: Tuple[float, float, float, float],
+    url: str,
+    tms: morecantile.TileMatrixSet = WEB_MERCATOR_TMS,
+    ) -> Dict:
+        """Get dataset meta from STACK asset."""
+        return {
+            "geometry": {
+                "type": "Polygon",
+                "coordinates": [
+                    [
+                        tms.truncate_lnglat(bounds[0], bounds[3]),
+                        tms.truncate_lnglat(bounds[0], bounds[1]),
+                        tms.truncate_lnglat(bounds[2], bounds[1]),
+                        tms.truncate_lnglat(bounds[2], bounds[3]),
+                        tms.truncate_lnglat(bounds[0], bounds[3]),
+                    ]
+                ],
+            },
+            "properties": {
+                "path": url,
+                "bounds": bounds,
+            },
+            "type": "Feature",
+        }

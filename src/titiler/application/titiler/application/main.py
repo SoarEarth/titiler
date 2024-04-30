@@ -34,7 +34,7 @@ from titiler.extensions import (
     cogViewerExtension,
     stacExtension,
     stacViewerExtension,
-    mosaicExtension,
+    soarExtension,
 )
 from titiler.mosaic.errors import MOSAIC_STATUS_CODES
 from titiler.mosaic.factory import MosaicTilerFactory
@@ -137,7 +137,7 @@ if not api_settings.disable_mosaic:
     mosaic = MosaicTilerFactory(
         router_prefix="/mosaicjson",
         extensions=[
-            mosaicExtension(),
+            soarExtension(),
         ],
     )
     app.include_router(

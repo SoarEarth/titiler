@@ -18,6 +18,8 @@ import json
 import datetime
 from typing import List
 
+from cogeo_mosaic.utils import get_dataset_info
+
 from pathlib import Path
 import requests
 import morecantile
@@ -68,11 +70,12 @@ class TitilerLayerMetadata(TypedDict):
     extra_fields: Optional[dict[str, Any]]
     keywords: Optional[list[str]]
     bounds: Tuple[float, float, float, float] = [-180, -90, 180, 90]
+    bounds_wkt: Optional[str]
     center: Optional[Tuple[float, float, int]]
     min_zoom: Optional[int]
     max_zoom: Optional[int]
     mosaic: dict[str, Any]
-    assets_urls: List[str]
+    assets_features: List[Dict[str, Any]]
     total_assets: Optional[int]
     app_region: Optional[str]
     app_provider: Optional[str]
@@ -100,8 +103,6 @@ class soarExtension(FactoryExtension):
             cog_info is not None
         ), "'rio-cogeo' must be installed to use CogValidateExtension"
 
-        DEST_PATH = os.getenv("DEST_PATH")
-
         @factory.router.post(
             "/createFromList", 
             response_model=MosaicJSON, 
@@ -125,9 +126,6 @@ class soarExtension(FactoryExtension):
         def create_mosaic_json_from_stac_collection(
             src_path=Depends(factory.path_dependency),
             dest_path: Annotated[Optional[str], Query(description="Destination path to save the MosaicJSON.")] = None,
-            use_metadata_only: Annotated[Optional[bool], Query(description="Destination path to save the MosaicJSON.")] = False,
-            min_zoom: Annotated[Optional[int], Query(description="Min zoom to be used if use_metadata_only is true, default 12")] = 12,
-            max_zoom: Annotated[Optional[int], Query(description="Min zoom to be used if use_metadata_only is true, default 20")] = 20,
         ):
             """Return basic info."""
             logger.info(F"Collection loading from {src_path}.")
@@ -139,8 +137,8 @@ class soarExtension(FactoryExtension):
             logger.info(F"Collection {collection.title} has {len(children_links)} children.")
             children_urls = [child.get_absolute_href() for child in children_links]
 
-            assets_urls = []
             assets_features = []
+            assets_features_cog = []
             items_links = collection.get_item_links()
             logger.info(F"Collection {collection.title} has {len(items_links)} items.")
 
@@ -148,23 +146,31 @@ class soarExtension(FactoryExtension):
                 # print(link.to_dict())
                 item = Item.from_file(link.absolute_href)
                 if(item.assets["visual"] is not None):
-                        url = item.assets["visual"].get_absolute_href()
-                        geojson_feature = create_geojson_feature(item.bbox, url)
-                        assets_urls.append(url)
-                        assets_features.append(geojson_feature)
-                        count = index + 1
-                        if(count % 5 == 0 or count == len(items_links)):
-                            progress = count / len(items_links) * 100  # Calculate progress as a percentage
-                            logger.info(f"Progress: {progress:.2f}% - index: {count} of {len(items_links)} items processed.")
+                    url = item.assets["visual"].get_absolute_href()
+                    geojson_feature = create_geojson_feature(item.id, link.absolute_href, item.bbox, url)
+                    assets_features.append(geojson_feature)
+                    current_count = len(assets_features)
+                    if(current_count == 1 or current_count % 25 == 24 or (index + 1) == len(items_links)):
+                        logger.info(F"Fetching cog feature: {url}")
+                        cog_feature = get_dataset_info(url, WEB_MERCATOR_TMS)
+                        assets_features_cog.append(cog_feature)
 
-            logger.info(F"Collection {collection.title} has {len(assets_urls)} items with visual asset.")
+                if(index % 5 == 4):
+                    progress = (index + 1) / len(items_links) * 100  # Calculate progress as a percentage
+                    logger.info(f"Progress: {progress:.2f}% - index: {index + 1} of {len(items_links)} items processed.")
+
+            logger.info(F"Collection {collection.title} has {len(assets_features)} items with visual asset.")
+
+            data_min_zoom = {feat["properties"]["minzoom"] for feat in assets_features_cog}
+            data_max_zoom = {feat["properties"]["maxzoom"] for feat in assets_features_cog}
+            min_zoom = max(data_min_zoom)
+            max_zoom = max(data_max_zoom)
+            logger.info(F"Collection {collection.title} has min_zoom: {min_zoom} and max_zoom: {max_zoom}.")
 
             data: MosaicJSON | None = None
-            if(use_metadata_only and len(assets_features) > 0):
+            if(len(assets_features) > 0):
                 data = MosaicJSON.from_features(assets_features, min_zoom, max_zoom)
-            elif (len(assets_urls) > 0):
-                data = MosaicJSON.from_urls(assets_urls)
-
+            
             logger.info(F"MosaicJSON created for {collection.title}.")
 
             metadata : TitilerLayerMetadata = {
@@ -176,35 +182,38 @@ class soarExtension(FactoryExtension):
                 "extent": create_stac_extent(collection.extent),
                 "extra_fields": collection.extra_fields,
                 "keywords": collection.keywords,
-                "total_assets": len(assets_urls),
+                "total_assets": len(assets_features),
                 "app_region": os.getenv("APP_REGION"),
                 "app_provider": os.getenv("APP_PROVIDER"),
                 "app_url": os.getenv("APP_URL"),
-                "assets_urls": assets_urls,
+                "assets_features": assets_features,
                 "children_urls": children_urls,
-                "total_children": len(children_urls)
+                "total_children": len(children_urls),
+                "max_zoom": max_zoom,
+                "min_zoom": min_zoom
             }
 
             if(data is not None):
                 metadata["mosaic"] = data.model_dump()
                 metadata["bounds"] = data.bounds
                 metadata["center"] = data.center
-                metadata["min_zoom"] = data.minzoom
-                metadata["max_zoom"] = data.maxzoom
+                metadata["bounds_wkt"] = F"POLYGON(({data.bounds[0]} {data.bounds[1]}, {data.bounds[2]} {data.bounds[1]}, {data.bounds[2]} {data.bounds[3]}, {data.bounds[0]} {data.bounds[3]}, {data.bounds[0]} {data.bounds[1]}))"
 
-
+            app_dest_path = os.getenv("APP_DEST_PATH")
             if (dest_path is not None and dest_path.startswith("https://")):
                 requests.post(dest_path, data = json.dumps(metadata))
+                logger.info(F"Sent as POST request to {dest_path}")
                 return 'Sent as POST request to ' + dest_path
-            elif(DEST_PATH is not None):
-                output_file_metadata = Path(f"{DEST_PATH}/metadata/{collection.id.lower()}.json")
+            elif(app_dest_path is not None):
+                output_file_metadata = Path(f"{app_dest_path}/metadata/{collection.id.lower()}.json")
                 output_file_metadata.parent.mkdir(exist_ok=True, parents=True)
                 output_file_metadata.write_text(json.dumps(metadata))
                 if(data is not None):
-                    output_file_mosaic = Path(f"{DEST_PATH}/mosaic/{collection.id.lower()}.json")
+                    output_file_mosaic = Path(f"{app_dest_path}/mosaic/{collection.id.lower()}.json")
                     output_file_mosaic.parent.mkdir(exist_ok=True, parents=True)
                     output_file_mosaic.write_text(data.model_dump_json())
-                return f"Saved to {DEST_PATH}"
+                logger.info(F"Saved to {app_dest_path}")
+                return f"Saved to {app_dest_path}"
             else:
                 return metadata
 
@@ -243,6 +252,8 @@ class soarExtension(FactoryExtension):
             return res
         
 def create_geojson_feature(
+    stac_id: str,
+    stac_href: str,
     bounds: Tuple[float, float, float, float],
     url: str,
     tms: morecantile.TileMatrixSet = WEB_MERCATOR_TMS,
@@ -264,6 +275,8 @@ def create_geojson_feature(
             "properties": {
                 "path": url,
                 "bounds": bounds,
+                "stac_id": stac_id,
+                "stac_href": stac_href,
             },
             "type": "Feature",
         }

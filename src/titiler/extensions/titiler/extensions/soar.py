@@ -129,7 +129,9 @@ class soarExtension(FactoryExtension):
             logger.info(F"Collection {collection.id} loaded.")
 
             root_catalog = collection.get_root()
-
+            catalog_id = getattr(root_catalog, "id", 'unknown')
+            logger.info(F"Collection {collection.title} is part of catalog {catalog_id}.")
+            
             children_links = collection.get_child_links()
             logger.info(F"Collection {collection.title} has {len(children_links)} children.")
             children_urls = [child.get_absolute_href() for child in children_links]
@@ -180,9 +182,7 @@ class soarExtension(FactoryExtension):
                 "extra_fields": collection.extra_fields,
                 "keywords": collection.keywords,
                 "total_assets": len(assets_features),
-                "root_catalog_id": root_catalog.id,
-                "root_catalog_title": root_catalog.title,
-                "root_catalog_url": root_catalog.get_self_href(),
+                "root_catalog_id": catalog_id,
                 "app_region": os.getenv("APP_REGION"),
                 "app_provider": os.getenv("APP_PROVIDER"),
                 "app_url": os.getenv("APP_URL"),
@@ -192,6 +192,10 @@ class soarExtension(FactoryExtension):
                 "max_zoom": max_zoom,
                 "min_zoom": min_zoom
             }
+
+            if(root_catalog is not None):
+                metadata["root_catalog_title"] = root_catalog.title
+                metadata["root_catalog_url"] = root_catalog.get_self_href()
 
             if(data is not None):
                 metadata["mosaic"] = data.model_dump()
@@ -208,13 +212,13 @@ class soarExtension(FactoryExtension):
             else: 
                 messages.append(F"Destination path is not valid or not provided for POST request.")
             if(return_only == False and app_dest_path is not None):
-                output_file_metadata = Path(f"{app_dest_path}/metadata/{collection.id.lower()}.json")
+                output_file_metadata = Path(f"{app_dest_path}/metadata/{catalog_id}/{collection.id.lower()}.json")
                 output_file_metadata.parent.mkdir(exist_ok=True, parents=True)
                 output_file_metadata.write_text(json.dumps(metadata))
                 logger.info(F"Metadata saved to {output_file_metadata.absolute()}")
                 messages.append(F"Metadata saved to {output_file_metadata.absolute()}")
                 if(data is not None):
-                    output_file_mosaic = Path(f"{app_dest_path}/mosaic/{collection.id.lower()}.json")
+                    output_file_mosaic = Path(f"{app_dest_path}/mosaic/{catalog_id}/{collection.id.lower()}.json")
                     output_file_mosaic.parent.mkdir(exist_ok=True, parents=True)
                     output_file_mosaic.write_text(data.model_dump_json())
                     logger.info(F"MosaicJSON saved to {output_file_mosaic.absolute()}")

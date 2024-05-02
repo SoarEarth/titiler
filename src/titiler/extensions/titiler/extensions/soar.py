@@ -110,28 +110,25 @@ class soarExtension(FactoryExtension):
         )
         def create_mosaic_json_from_list(
             data: Annotated[CreateBody, Body(description="COGs details.")],
-            src_path=Depends(factory.path_dependency),
-            backend_params=Depends(factory.backend_dependency),
-            reader_params=Depends(factory.reader_dependency),
-            env=Depends(factory.environment_dependency),
         ):
             """Return basic info."""
             return MosaicJSON.from_urls(data["links"])
-        
+
         @factory.router.get(
             "/soar/createFromStacCollection", 
-            # response_model=Collection, 
             responses={200: {"description": "Return created MosaicJSON"}},
         )
         def create_mosaic_json_from_stac_collection(
             src_path=Depends(factory.path_dependency),
             dest_path: Annotated[Optional[str], Query(description="Destination path to save the MosaicJSON.")] = None,
+            return_only: Annotated[bool, Query(description="Return metadata dto and don't save/send data to destination")] = False,
         ):
             """Return basic info."""
             logger.info(F"Collection loading from {src_path}.")
             collection = Collection.from_file(src_path)
             logger.info(F"Collection {collection.id} loaded.")
 
+            root_catalog = collection.get_root()
 
             children_links = collection.get_child_links()
             logger.info(F"Collection {collection.title} has {len(children_links)} children.")
@@ -147,7 +144,7 @@ class soarExtension(FactoryExtension):
                 item = Item.from_file(link.absolute_href)
                 if(item.assets["visual"] is not None):
                     url = item.assets["visual"].get_absolute_href()
-                    geojson_feature = create_geojson_feature(item.id, link.absolute_href, item.bbox, url)
+                    geojson_feature = create_geojson_feature(item, url)
                     assets_features.append(geojson_feature)
                     current_count = len(assets_features)
                     if(current_count == 1 or current_count % 25 == 24 or (index + 1) == len(items_links)):
@@ -183,6 +180,9 @@ class soarExtension(FactoryExtension):
                 "extra_fields": collection.extra_fields,
                 "keywords": collection.keywords,
                 "total_assets": len(assets_features),
+                "root_catalog_id": root_catalog.id,
+                "root_catalog_title": root_catalog.title,
+                "root_catalog_url": root_catalog.get_self_href(),
                 "app_region": os.getenv("APP_REGION"),
                 "app_provider": os.getenv("APP_PROVIDER"),
                 "app_url": os.getenv("APP_URL"),
@@ -199,21 +199,31 @@ class soarExtension(FactoryExtension):
                 metadata["center"] = data.center
                 metadata["bounds_wkt"] = F"POLYGON(({data.bounds[0]} {data.bounds[1]}, {data.bounds[2]} {data.bounds[1]}, {data.bounds[2]} {data.bounds[3]}, {data.bounds[0]} {data.bounds[3]}, {data.bounds[0]} {data.bounds[1]}))"
 
+            messages = []
             app_dest_path = os.getenv("APP_DEST_PATH")
-            if (dest_path is not None and dest_path.startswith("https://")):
+            if (return_only == False and dest_path is not None and dest_path.startswith("https://")):
                 requests.post(dest_path, data = json.dumps(metadata))
                 logger.info(F"Sent as POST request to {dest_path}")
-                return 'Sent as POST request to ' + dest_path
-            elif(app_dest_path is not None):
+                messages.append(F"Sent as POST request to {dest_path}")
+            else: 
+                messages.append(F"Destination path is not valid or not provided for POST request.")
+            if(return_only == False and app_dest_path is not None):
                 output_file_metadata = Path(f"{app_dest_path}/metadata/{collection.id.lower()}.json")
                 output_file_metadata.parent.mkdir(exist_ok=True, parents=True)
                 output_file_metadata.write_text(json.dumps(metadata))
+                logger.info(F"Metadata saved to {output_file_metadata.absolute()}")
+                messages.append(F"Metadata saved to {output_file_metadata.absolute()}")
                 if(data is not None):
                     output_file_mosaic = Path(f"{app_dest_path}/mosaic/{collection.id.lower()}.json")
                     output_file_mosaic.parent.mkdir(exist_ok=True, parents=True)
                     output_file_mosaic.write_text(data.model_dump_json())
-                logger.info(F"Saved to {app_dest_path}")
-                return f"Saved to {app_dest_path}"
+                    logger.info(F"MosaicJSON saved to {output_file_mosaic.absolute()}")
+                    messages.append(F"MosaicJSON saved to {output_file_mosaic.absolute()}")
+            else:
+                messages.append(F"Destination path is not valid or not provided for saving metadata and mosaicjson.")
+
+            if(return_only == False):
+                return messages
             else:
                 return metadata
 
@@ -236,6 +246,7 @@ class soarExtension(FactoryExtension):
             res["catalog_description"] = root_catalog.description
             res["collections"] = []
             collections = list(root_catalog.get_collections())
+            res["total_collections"] = len(collections)
 
             for collection in collections:
                 stacCollection : StacCollection = {
@@ -252,13 +263,12 @@ class soarExtension(FactoryExtension):
             return res
         
 def create_geojson_feature(
-    stac_id: str,
-    stac_href: str,
-    bounds: Tuple[float, float, float, float],
+    stac_item: Item,
     url: str,
     tms: morecantile.TileMatrixSet = WEB_MERCATOR_TMS,
     ) -> Dict:
         """Get dataset meta from STACK asset."""
+        bounds = stac_item.bbox
         return {
             "geometry": {
                 "type": "Polygon",
@@ -275,8 +285,10 @@ def create_geojson_feature(
             "properties": {
                 "path": url,
                 "bounds": bounds,
-                "stac_id": stac_id,
-                "stac_href": stac_href,
+                "bounds_wkt": F"POLYGON(({bounds[0]} {bounds[1]}, {bounds[2]} {bounds[1]}, {bounds[2]} {bounds[3]}, {bounds[0]} {bounds[3]}, {bounds[0]} {bounds[1]}))",
+                "stac_id": stac_item.id,
+                "stac_href": stac_item.get_self_href(),
+                "stac_properties": stac_item.properties,
             },
             "type": "Feature",
         }

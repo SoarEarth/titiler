@@ -6,4 +6,5 @@ from .cogeo import cogValidateExtension  # noqa
 from .stac import stacExtension  # noqa
 from .viewer import cogViewerExtension, stacViewerExtension  # noqa
 from .wms import wmsExtension  # noqa
-from .soar import soarExtension  # noqa
+from .soar_mosaic import soarMosaicExtension  # noqa
+from .soar_stac import soarStacExtension # noqa

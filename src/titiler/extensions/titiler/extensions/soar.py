@@ -25,10 +25,7 @@ import requests
 import morecantile
 
 import logging
-# logger = logging.getLogger()
-# logger = logging.getLogger(__name__)
 logger = logging.getLogger('uvicorn.error')
-# from fastapi.logger import logger
 
 WEB_MERCATOR_TMS = morecantile.tms.get("WebMercatorQuad")
 
@@ -45,7 +42,6 @@ except ImportError:  # pragma: nocover
     create_stac_item = None  # type: ignore
     pystac = None  # type: ignore
     str_to_datetime = datetime_to_str = None  # type: ignore
-    # Catalog = Collection = Asset = Item = None  # type: ignore
 
 
 class CreateBody(TypedDict):
@@ -131,7 +127,7 @@ class soarExtension(FactoryExtension):
             root_catalog = collection.get_root()
             catalog_id = getattr(root_catalog, "id", 'unknown')
             logger.info(F"Collection {collection.title} is part of catalog {catalog_id}.")
-            
+
             children_links = collection.get_child_links()
             logger.info(F"Collection {collection.title} has {len(children_links)} children.")
             children_urls = [child.get_absolute_href() for child in children_links]
@@ -238,9 +234,8 @@ class soarExtension(FactoryExtension):
         )
         def get_stac_catalog_details(
             src_path=Depends(factory.path_dependency),
-            backend_params=Depends(factory.backend_dependency),
-            reader_params=Depends(factory.reader_dependency),
-            env=Depends(factory.environment_dependency),
+            dest_path: Annotated[Optional[str], Query(description="Destination path to save the MosaicJSON.")] = None,
+            return_only: Annotated[bool, Query(description="Return metadata dto and don't save/send data to destination")] = False,
         ):
             """Return basic info."""
             res = dict()
@@ -260,12 +255,30 @@ class soarExtension(FactoryExtension):
                     "extent": create_stac_extent(collection.extent),
                     "href": collection.get_self_href(),
                     "catalog_type": collection.catalog_type,
-
                 }
                 res["collections"].append(stacCollection)
 
+            messages = []
+            app_dest_path = os.getenv("APP_DEST_PATH")
+            if (return_only == False and dest_path is not None and dest_path.startswith("https://")):
+                requests.post(dest_path, data = json.dumps(res))
+                logger.info(F"Sent as POST request to {dest_path}")
+                messages.append(F"Sent as POST request to {dest_path}")
+            else: 
+                messages.append(F"Destination path is not valid or not provided for POST request.")
+            if(return_only == False and app_dest_path is not None):
+                output_file_metadata = Path(f"{app_dest_path}/catalog/{root_catalog.id.lower()}.json")
+                output_file_metadata.parent.mkdir(exist_ok=True, parents=True)
+                output_file_metadata.write_text(json.dumps(res))
+                logger.info(F"Catalog saved to {output_file_metadata.absolute()}")
+                messages.append(F"Catalog saved to {output_file_metadata.absolute()}")
+            else:
+                messages.append(F"Destination path is not valid or not provided for saving metadata and mosaicjson.")
+
+            if(return_only == False):
+                return messages
             return res
-        
+
 def create_geojson_feature(
     stac_item: Item,
     url: str,

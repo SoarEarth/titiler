@@ -14,6 +14,27 @@ logger = logging.getLogger('uvicorn.error')
 WEB_MERCATOR_TMS = morecantile.tms.get("WebMercatorQuad")
 APP_DEST_PATH = os.getenv("APP_DEST_PATH")
 
+class GeojsonGemetry(TypedDict):
+    """GeoJSON Geometry."""
+    type: Literal["Polygon"]
+    coordinates: List[List[Tuple[float, float]]]
+
+class GeojsonProperties(TypedDict):
+    """GeoJSON Properties."""
+    path: str
+    bounds: list[float]
+    bounds_wkt: str
+    stac_id: str
+    stac_href: str
+    stac_properties: Dict[str, Any]
+
+
+class GeojsonFeature(TypedDict):
+    """GeoJSON Feature."""
+    type: Literal["Feature"]
+    properties: GeojsonProperties
+    geometry: GeojsonGemetry
+
 class StacExtent(TypedDict):
     """STAC Extent."""
     spatial: Optional[list[list[float]]]
@@ -27,6 +48,26 @@ class StacChild(TypedDict):
     extent: StacExtent
     type: str
     url: str
+
+class StacAssetFeature(TypedDict):
+    """STAC Asset Feature."""
+    id: str
+    title: str
+    description: str
+    type: str
+    url: str
+    extent: StacExtent
+    extra_fields: Optional[dict[str, Any]]
+    keywords: Optional[list[str]]
+    bounds: Tuple[float, float, float, float] = [-180, -90, 180, 90]
+    bounds_wkt: Optional[str]
+    center: Optional[Tuple[float, float, int]]
+    min_zoom: Optional[int]
+    max_zoom: Optional[int]
+    mosaic: dict[str, Any]
+    children: Optional[List[StacChild]]
+    total_children: Optional[int]
+    root_catalog_url: Optional[str]
 
 class StacCollectionMetadata(TypedDict):
     """STAC Collection metadata for Soar integration."""
@@ -66,7 +107,7 @@ def create_geojson_feature(
     stac_item: Item,
     url: str,
     tms: morecantile.TileMatrixSet = WEB_MERCATOR_TMS,
-    ) -> Dict:
+    ) -> GeojsonFeature:
         """Get dataset meta from STACK asset."""
         bounds = stac_item.bbox
         return {
@@ -135,7 +176,7 @@ def save_or_post_data(dest_path: str, file_path: str, content: str) -> str:
                 msg = F"File sent:  {dest_path}"
         else:
             logger.info(F"Saving file: {file_path}")
-            file_path = Path(F"{APP_DEST_PATH}{file_path}")
+            file_path = Path(F"{APP_DEST_PATH}/{file_path}")
             file_path.parent.mkdir(exist_ok=True, parents=True)
             file_path.write_text(content)
             msg = F"File saved:  {file_path}"

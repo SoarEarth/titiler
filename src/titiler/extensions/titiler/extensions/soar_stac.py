@@ -1,19 +1,15 @@
 """soar-stac Extension."""
 
-import os
 from dataclasses import dataclass
-from typing import Optional
 
 from fastapi import Depends, Query
-from titiler.extensions.soar_util import StacChild, StacCatalogMetadata, StacExtent, create_stac_child, create_stac_extent, save_or_post_data, send_post_request
-from typing_extensions import Annotated, TypedDict
+from titiler.extensions.soar_util import StacCatalogMetadata, create_stac_child, save_or_post_data
+from typing_extensions import Annotated
 
 from fastapi import Depends, Query
 
 from titiler.core.factory import BaseTilerFactory, FactoryExtension
 import json
-
-import requests
 
 import logging
 logger = logging.getLogger('uvicorn.error')
@@ -59,7 +55,7 @@ class soarStacExtension(FactoryExtension):
                 "children": [create_stac_child(child) for child in children],
                 "total_children": len(children)
             }
-            output_file_path = f"{dest_path}/catalog-{root_catalog.id.lower()}.json"
+            output_file_path = f"{dest_path.strip('/')}/{root_catalog.id.lower()}.json"
             messages = [save_or_post_data(dest_path, output_file_path, json.dumps(metadata))]
 
             response = {"messages": messages}

@@ -171,23 +171,14 @@ def save_or_post_data(dest_path: str, file_path: str, content: str) -> str:
     msg = F"dest_path [{dest_path}] or file_path [{file_path}] are not defined or are invalid"
     if(dest_path is not None):
         if (dest_path.startswith("https://")):
-                logger.info(F"Sending file via POST to: {dest_path}")
-                requests.post(dest_path, data=content)
-                msg = F"File sent:  {dest_path}"
+            logger.info(F"Sending file via POST to: {dest_path}")
+            requests.post(dest_path, data=content)
+            msg = F"File sent:  {dest_path}"
         else:
             logger.info(F"Saving file: {file_path}")
-            file_path = Path(F"{APP_DEST_PATH}/{file_path}")
-            file_path.parent.mkdir(exist_ok=True, parents=True)
-            file_path.write_text(content)
-            msg = F"File saved:  {file_path}"
-    logger.info(msg)
-    return msg
-
-
-def send_post_request(destination: str, content: str) -> str:
-    msg = ""
-    logger.info(F"Sending file: {destination}")
-    requests.post(destination, data=content)
-    msg = F"File sent:  {destination}"
+            file = Path(F"{APP_DEST_PATH}/{file_path}")
+            file.parent.mkdir(exist_ok=True, parents=True)
+            file.write_text(content)
+            msg = F"File saved:  {file.absolute()}"
     logger.info(msg)
     return msg

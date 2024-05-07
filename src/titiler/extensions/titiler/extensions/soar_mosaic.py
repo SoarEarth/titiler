@@ -9,7 +9,7 @@ from titiler.extensions.soar_util import create_geojson_feature, create_stac_chi
 from typing_extensions import Annotated, TypedDict
 
 from cogeo_mosaic.mosaic import MosaicJSON
-from fastapi import Body, Depends, Path, Query
+from fastapi import Body, Depends, Query
 
 from titiler.core.factory import BaseTilerFactory, FactoryExtension
 import json
@@ -166,8 +166,8 @@ class soarMosaicExtension(FactoryExtension):
                 metadata["bounds_wkt"] = F"POLYGON(({data.bounds[0]} {data.bounds[1]}, {data.bounds[2]} {data.bounds[1]}, {data.bounds[2]} {data.bounds[3]}, {data.bounds[0]} {data.bounds[3]}, {data.bounds[0]} {data.bounds[1]}))"
 
             messages = []
-            output_file_metadata = f"{metadata_path}/metadata-{collection.id.lower()}.json"
-            output_file_mosaic = f"{mosaic_path}/mosaic-{collection.id.lower()}.json"
+            output_file_metadata = f"{metadata_path.strip('/')}/{collection.id.lower()}.json"
+            output_file_mosaic = f"{mosaic_path.strip('/')}/{collection.id.lower()}.json"
 
             messages.append(save_or_post_data(metadata_path, output_file_metadata, json.dumps(metadata)))
             if(data is not None):

@@ -19,9 +19,17 @@ class StacExtent(TypedDict):
     spatial: Optional[list[list[float]]]
     temporal: Optional[list[list[str]]]
 
-class TitilerLayerMetadata(TypedDict):
-    """Titiler Layer metadata for Soar listing."""
+class StacChild(TypedDict):
+    """Simplified data object of STAC collection"""
+    id: str
+    title: str
+    description: str
+    extent: StacExtent
+    type: str
+    url: str
 
+class StacCollectionMetadata(TypedDict):
+    """STAC Collection metadata for Soar integration."""
     id: str
     title: str
     description: str
@@ -42,8 +50,17 @@ class TitilerLayerMetadata(TypedDict):
     app_region: Optional[str]
     app_provider: Optional[str]
     app_url: Optional[str]
-    children_urls: Optional[List[str]]
+    children: Optional[List[StacChild]]
     total_children: Optional[int]
+    root_catalog_url: Optional[str]
+
+class StacCatalogMetadata(TypedDict):
+    """STAC Catalog metadata for Soar integration"""
+    id: str
+    title: str
+    description: str
+    children: List[StacChild]
+    total_children: int
 
 def create_geojson_feature(
     stac_item: Item,
@@ -86,6 +103,19 @@ def create_stac_extent(ext: Extent) -> StacExtent:
         "spatial": ext.spatial.bboxes,
         "temporal": mapped_intervals,
     }
+
+def create_stac_child(child: Catalog | Collection) -> StacChild:
+    """Create StacChild from pystac"""
+    stacChild : StacChild = {
+        "id": child.id,
+        "title": child.title,
+        "description": child.description,
+        "href": child.get_self_href(),
+        "type": child.STAC_OBJECT_TYPE
+    }
+    if(child.STAC_OBJECT_TYPE == "Collection"):
+        stacChild["extent"] = create_stac_extent(child.extent)
+    return stacChild
 
 def transform_link(link: Link) -> object:
     return {

@@ -2,10 +2,10 @@
 
 import os
 from dataclasses import dataclass
-from typing import List, Optional
+from typing import List, Optional, cast
 
 from fastapi import Depends, Query
-from titiler.extensions.soar_util import create_geojson_feature, create_stac_extent, save_or_post_data, TitilerLayerMetadata
+from titiler.extensions.soar_util import create_geojson_feature, create_stac_child, create_stac_extent, save_or_post_data, StacCollectionMetadata
 from typing_extensions import Annotated, TypedDict
 
 from cogeo_mosaic.mosaic import MosaicJSON
@@ -26,7 +26,7 @@ WEB_MERCATOR_TMS = morecantile.tms.get("WebMercatorQuad")
 
 try:
     import pystac
-    from pystac import Collection, Item
+    from pystac import Collection, Item, Catalog, Link
 except ImportError:  # pragma: nocover
     pystac = None  # type: ignore
 
@@ -85,13 +85,16 @@ class soarMosaicExtension(FactoryExtension):
             collection = Collection.from_file(src_path)
             logger.info(F"Collection {collection.id} loaded.")
 
-            root_catalog = collection.get_root()
-            catalog_id = getattr(root_catalog, "id", 'unknown').lower()
-            logger.info(F"Collection {collection.title} is part of catalog {catalog_id}.")
+            root_catalog_url = 'unknown'
+            root_catalog_href = collection.get_root_link()
+            if(root_catalog_href is not None):
+                root_catalog_url = root_catalog_href.absolute_href
+            logger.info(F"Collection {collection.title} is part of catalog {root_catalog_href}.")
 
-            children_links = collection.get_child_links()
-            logger.info(F"Collection {collection.title} has {len(children_links)} children.")
-            children_urls = [child.get_absolute_href() for child in children_links]
+            child_links = collection.get_child_links()
+            logger.info(F"Collection {collection.title} has {len(child_links)} children.")
+
+            children = [fetch_child(link) for link in child_links]
 
             assets_features = []
             assets_features_cog = []
@@ -119,8 +122,12 @@ class soarMosaicExtension(FactoryExtension):
 
             data_min_zoom = {feat["properties"]["minzoom"] for feat in assets_features_cog}
             data_max_zoom = {feat["properties"]["maxzoom"] for feat in assets_features_cog}
-            min_zoom = max(data_min_zoom)
-            max_zoom = max(data_max_zoom)
+            min_zoom = -1
+            if(len(data_min_zoom) > 0):
+                min_zoom = min(data_min_zoom)
+            max_zoom = -1
+            if(len(data_max_zoom) > 0):
+                max_zoom = max(data_max_zoom)
             logger.info(F"Collection {collection.title} has min_zoom: {min_zoom} and max_zoom: {max_zoom}.")
 
             data: MosaicJSON | None = None
@@ -129,7 +136,7 @@ class soarMosaicExtension(FactoryExtension):
             
             logger.info(F"MosaicJSON created for {collection.title}.")
 
-            metadata : TitilerLayerMetadata = {
+            metadata : StacCollectionMetadata = {
                 "id": collection.id,
                 "title": collection.title,
                 "description": collection.description,
@@ -140,20 +147,17 @@ class soarMosaicExtension(FactoryExtension):
                 "extra_fields": collection.extra_fields,
                 "keywords": collection.keywords,
                 "total_assets": len(assets_features),
-                "root_catalog_id": catalog_id,
+                "root_catalog_url": root_catalog_url,
                 "app_region": os.getenv("APP_REGION"),
                 "app_provider": os.getenv("APP_PROVIDER"),
                 "app_url": os.getenv("APP_URL"),
                 "assets_features": assets_features,
-                "children_urls": children_urls,
-                "total_children": len(children_urls),
+                "child_links": [link.absolute_href for link in child_links],
+                "children": [create_stac_child(child) for child in children],
+                "total_children": len(child_links),
                 "max_zoom": max_zoom,
                 "min_zoom": min_zoom
             }
-
-            if(root_catalog is not None):
-                metadata["root_catalog_title"] = root_catalog.title
-                metadata["root_catalog_url"] = root_catalog.get_self_href()
 
             if(data is not None):
                 metadata["mosaic"] = data.model_dump()
@@ -166,9 +170,27 @@ class soarMosaicExtension(FactoryExtension):
             output_file_mosaic = f"{mosaic_path}/mosaic-{collection.id.lower()}.json"
 
             messages.append(save_or_post_data(metadata_path, output_file_metadata, json.dumps(metadata)))
-            messages.append(save_or_post_data(mosaic_path, output_file_mosaic, data.model_dump_json()))
+            if(data is not None):
+                messages.append(save_or_post_data(mosaic_path, output_file_mosaic, data.model_dump_json()))
 
             response = {"messages": messages}
             if(return_data):
                 response["data"] = metadata
             return response
+
+def fetch_children(links: list[Link]) -> list[Collection | Catalog]:
+    """Fetch STAC children."""
+    children = []
+    for link in links:
+        child = fetch_child(link)
+        if child is not None:
+            children.append(child)
+    return children         
+
+def fetch_child(link: Link) -> Collection | Catalog | None:
+    """Fetch a STAC child."""
+    try:
+        link.resolve_stac_object()
+        return cast([Collection | Catalog], link.target)
+    except:
+        return None

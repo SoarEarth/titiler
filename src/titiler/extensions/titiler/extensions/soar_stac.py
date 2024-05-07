@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from typing import Optional
 
 from fastapi import Depends, Query
-from titiler.extensions.soar_util import StacExtent, create_stac_extent, save_to_file
+from titiler.extensions.soar_util import StacExtent, create_stac_extent, save_or_post_data, send_post_request
 from typing_extensions import Annotated, TypedDict
 
 from fastapi import Depends, Query
@@ -50,8 +50,8 @@ class soarStacExtension(FactoryExtension):
         )
         def create_metadata_from_stac_catalog(
             src_path=Depends(factory.path_dependency),
-            dest_path: Annotated[Optional[str], Query(description="Destination path to save the MosaicJSON.")] = None,
-            return_only: Annotated[bool, Query(description="Return metadata dto and don't save/send data to destination")] = False,
+            dest_path: Annotated[str, Query(description="Destination path to save or send via POST the MosaicJSON.")] = None,
+            return_data: Annotated[bool, Query(description="Return metadata as response too")] = False,
         ):
             """Return basic info."""
             res = dict()
@@ -77,22 +77,11 @@ class soarStacExtension(FactoryExtension):
                     stacChild["extent"] = create_stac_extent(child.extent)
                 res["children"].append(stacChild)
 
-            messages = []
-            app_dest_path = os.getenv("APP_DEST_PATH")
-            if (return_only == False and dest_path is not None and dest_path.startswith("https://")):
-                requests.post(dest_path, data = json.dumps(res))
-                logger.info(F"Sent as POST request to {dest_path}")
-                messages.append(F"Sent as POST request to {dest_path}")
-            else: 
-                messages.append(F"Destination path is not valid or not provided for POST request.")
-            if(return_only == False and app_dest_path is not None):
-                file_path = f"{app_dest_path}/catalog/{root_catalog.id.lower()}.json"
-                save_to_file(file_path, json.dumps(res))
-                messages.append(F"Catalog saved to {file_path}")
-            else:
-                messages.append(F"Destination path is not valid or not provided.")
+            output_file_path = f"{dest_path}/catalog-{root_catalog.id.lower()}.json"
+            messages = [save_or_post_data(dest_path, output_file_path, json.dumps(res))]
 
-            if(return_only == False):
-                return messages
-            return res
+            response = {"messages": messages}
+            if(return_data):
+                response["data"] = res
+            return response
 

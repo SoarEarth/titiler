@@ -7,9 +7,12 @@ from pystac import Catalog, Collection, Asset, Item, Extent, Link
 from pystac.utils import datetime_to_str, str_to_datetime
 from pathlib import Path
 import logging
+import requests
+
 logger = logging.getLogger('uvicorn.error')
 
 WEB_MERCATOR_TMS = morecantile.tms.get("WebMercatorQuad")
+APP_DEST_PATH = os.getenv("APP_DEST_PATH")
 
 class StacExtent(TypedDict):
     """STAC Extent."""
@@ -22,6 +25,7 @@ class TitilerLayerMetadata(TypedDict):
     id: str
     title: str
     description: str
+    type: str
     stac_url: str
     license: str
     extent: StacExtent
@@ -91,8 +95,28 @@ def transform_link(link: Link) -> object:
         "mediaType": link.media_type,
     }
 
-def save_to_file(file_path: str, content: str):
-    file_path = Path()
-    file_path.parent.mkdir(exist_ok=True, parents=True)
-    file_path.write_text(content)
-    logger.info(F"File created:  {file_path}")
+
+def save_or_post_data(dest_path: str, file_path: str, content: str) -> str:
+    msg = F"dest_path [{dest_path}] or file_path [{file_path}] are not defined or are invalid"
+    if(dest_path is not None):
+        if (dest_path.startswith("https://")):
+                logger.info(F"Sending file via POST to: {dest_path}")
+                requests.post(dest_path, data=content)
+                msg = F"File sent:  {dest_path}"
+        else:
+            logger.info(F"Saving file: {file_path}")
+            file_path = Path(F"{APP_DEST_PATH}{file_path}")
+            file_path.parent.mkdir(exist_ok=True, parents=True)
+            file_path.write_text(content)
+            msg = F"File saved:  {file_path}"
+    logger.info(msg)
+    return msg
+
+
+def send_post_request(destination: str, content: str) -> str:
+    msg = ""
+    logger.info(F"Sending file: {destination}")
+    requests.post(destination, data=content)
+    msg = F"File sent:  {destination}"
+    logger.info(msg)
+    return msg

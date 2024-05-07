@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from typing import List, Optional
 
 from fastapi import Depends, Query
-from titiler.extensions.soar_util import create_geojson_feature, create_stac_extent, save_to_file, TitilerLayerMetadata
+from titiler.extensions.soar_util import create_geojson_feature, create_stac_extent, save_or_post_data, TitilerLayerMetadata
 from typing_extensions import Annotated, TypedDict
 
 from cogeo_mosaic.mosaic import MosaicJSON
@@ -17,7 +17,6 @@ from typing import List
 
 from cogeo_mosaic.utils import get_dataset_info
 
-import requests
 import morecantile
 
 import logging
@@ -53,9 +52,23 @@ class soarMosaicExtension(FactoryExtension):
         )
         def create_mosaic_json_from_list(
             data: Annotated[CreateBody, Body(description="COGs details.")],
+            mosaic_path: Annotated[Optional[str], Query(description="Destination path to save the MosaicJSON.")] = None,
+            return_result: Annotated[bool, Query(description="Return metadata as response too")] = False,
         ):
-            """Return basic info."""
-            return MosaicJSON.from_urls(data["links"])
+            """Create MosaicJSON from given list of COGs links."""
+            data = MosaicJSON.from_urls(data["links"])
+
+            messages = []
+            output_file_mosaic = f"{mosaic_path}/mosaic.json"
+            
+            # if (metadata_path is not None):
+            #     messages.append(save_or_send_file(output_file_metadata, json.dumps(metadata)))
+            if(data is not None and mosaic_path is not None):
+                messages.append(save_or_post_data(output_file_mosaic, data.model_dump_json()))
+            
+            if(return_result):
+                return data
+            return messages
 
         @factory.router.get(
             "/soar/createFromStacCollection", 
@@ -63,8 +76,9 @@ class soarMosaicExtension(FactoryExtension):
         )
         def create_mosaic_json_from_stac_collection(
             src_path=Depends(factory.path_dependency),
-            dest_path: Annotated[Optional[str], Query(description="Destination path to save the MosaicJSON.")] = None,
-            return_only: Annotated[bool, Query(description="Return metadata dto and don't save/send data to destination")] = False,
+            metadata_path: Annotated[Optional[str], Query(description="Destination path to save the Soar metadata file.")] = None,
+            mosaic_path: Annotated[Optional[str], Query(description="Destination path to save the MosaicJSON.")] = None,
+            return_data: Annotated[bool, Query(description="Return metadata as response too")] = False,
         ):
             """Return basic info."""
             logger.info(F"Collection loading from {src_path}.")
@@ -72,7 +86,7 @@ class soarMosaicExtension(FactoryExtension):
             logger.info(F"Collection {collection.id} loaded.")
 
             root_catalog = collection.get_root()
-            catalog_id = getattr(root_catalog, "id", 'unknown')
+            catalog_id = getattr(root_catalog, "id", 'unknown').lower()
             logger.info(F"Collection {collection.title} is part of catalog {catalog_id}.")
 
             children_links = collection.get_child_links()
@@ -119,6 +133,7 @@ class soarMosaicExtension(FactoryExtension):
                 "id": collection.id,
                 "title": collection.title,
                 "description": collection.description,
+                "type": collection.STAC_OBJECT_TYPE,
                 "stac_url": collection.get_self_href(),
                 "license": collection.license,
                 "extent": create_stac_extent(collection.extent),
@@ -147,25 +162,13 @@ class soarMosaicExtension(FactoryExtension):
                 metadata["bounds_wkt"] = F"POLYGON(({data.bounds[0]} {data.bounds[1]}, {data.bounds[2]} {data.bounds[1]}, {data.bounds[2]} {data.bounds[3]}, {data.bounds[0]} {data.bounds[3]}, {data.bounds[0]} {data.bounds[1]}))"
 
             messages = []
-            app_dest_path = os.getenv("APP_DEST_PATH")
-            if (return_only == False and dest_path is not None and dest_path.startswith("https://")):
-                requests.post(dest_path, data = json.dumps(metadata))
-                logger.info(F"Sent as POST request to {dest_path}")
-                messages.append(F"Sent as POST request to {dest_path}")
-            else: 
-                messages.append(F"Destination path is not valid or not provided for POST request.")
-            if(return_only == False and app_dest_path is not None):
-                output_file_metadata = f"{app_dest_path}/metadata/{catalog_id}/{collection.id.lower()}.json"
-                save_to_file(output_file_metadata, json.dumps(metadata))
-                messages.append(F"Metadata saved to {output_file_metadata}")
-                if(data is not None):
-                    output_file_mosaic = f"{app_dest_path}/mosaic/{catalog_id}/{collection.id.lower()}.json"
-                    save_to_file(output_file_mosaic, data.model_dump_json())
-                    messages.append(F"MosaicJSON saved to {output_file_mosaic.absolute()}")
-            else:
-                messages.append(F"Destination path is not valid or not provided for saving metadata and mosaicjson.")
+            output_file_metadata = f"{metadata_path}/metadata-{collection.id.lower()}.json"
+            output_file_mosaic = f"{mosaic_path}/mosaic-{collection.id.lower()}.json"
 
-            if(return_only == False):
-                return messages
-            else:
-                return metadata
+            messages.append(save_or_post_data(metadata_path, output_file_metadata, json.dumps(metadata)))
+            messages.append(save_or_post_data(mosaic_path, output_file_mosaic, data.model_dump_json()))
+
+            response = {"messages": messages}
+            if(return_data):
+                response["data"] = metadata
+            return response

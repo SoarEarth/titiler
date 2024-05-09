@@ -1,11 +1,10 @@
-import datetime
 import morecantile
 import os
-from typing_extensions import Annotated, TypedDict
-from typing import Any, Dict, List, Literal, Optional, Tuple, Union
-from pystac import Catalog, Collection, Asset, Item, Extent, Link
+from titiler.extensions.soar_models import GeojsonFeature, StacChild, StacExtent
+from pystac import Catalog, Collection, Item, Extent, Link
 from pystac.utils import datetime_to_str, str_to_datetime
 from pathlib import Path
+
 import logging
 import requests
 
@@ -13,95 +12,9 @@ logger = logging.getLogger('uvicorn.error')
 
 WEB_MERCATOR_TMS = morecantile.tms.get("WebMercatorQuad")
 APP_DEST_PATH = os.getenv("APP_DEST_PATH")
-
-class GeojsonGemetry(TypedDict):
-    """GeoJSON Geometry."""
-    type: Literal["Polygon"]
-    coordinates: List[List[Tuple[float, float]]]
-
-class GeojsonProperties(TypedDict):
-    """GeoJSON Properties."""
-    path: str
-    bounds: list[float]
-    bounds_wkt: str
-    stac_id: str
-    stac_href: str
-    stac_properties: Dict[str, Any]
-
-
-class GeojsonFeature(TypedDict):
-    """GeoJSON Feature."""
-    type: Literal["Feature"]
-    properties: GeojsonProperties
-    geometry: GeojsonGemetry
-
-class StacExtent(TypedDict):
-    """STAC Extent."""
-    spatial: Optional[list[list[float]]]
-    temporal: Optional[list[list[str]]]
-
-class StacChild(TypedDict):
-    """Simplified data object of STAC collection"""
-    id: str
-    title: str
-    description: str
-    extent: StacExtent
-    type: str
-    url: str
-
-class StacAssetFeature(TypedDict):
-    """STAC Asset Feature."""
-    id: str
-    title: str
-    description: str
-    type: str
-    url: str
-    extent: StacExtent
-    extra_fields: Optional[dict[str, Any]]
-    keywords: Optional[list[str]]
-    bounds: Tuple[float, float, float, float] = [-180, -90, 180, 90]
-    bounds_wkt: Optional[str]
-    center: Optional[Tuple[float, float, int]]
-    min_zoom: Optional[int]
-    max_zoom: Optional[int]
-    mosaic: dict[str, Any]
-    children: Optional[List[StacChild]]
-    total_children: Optional[int]
-    root_catalog_url: Optional[str]
-
-class StacCollectionMetadata(TypedDict):
-    """STAC Collection metadata for Soar integration."""
-    id: str
-    title: str
-    description: str
-    type: str
-    stac_url: str
-    license: str
-    extent: StacExtent
-    extra_fields: Optional[dict[str, Any]]
-    keywords: Optional[list[str]]
-    bounds: Tuple[float, float, float, float] = [-180, -90, 180, 90]
-    bounds_wkt: Optional[str]
-    center: Optional[Tuple[float, float, int]]
-    min_zoom: Optional[int]
-    max_zoom: Optional[int]
-    mosaic: dict[str, Any]
-    assets_features: List[Dict[str, Any]]
-    total_assets: Optional[int]
-    app_region: Optional[str]
-    app_provider: Optional[str]
-    app_url: Optional[str]
-    children: Optional[List[StacChild]]
-    total_children: Optional[int]
-    root_catalog_url: Optional[str]
-
-class StacCatalogMetadata(TypedDict):
-    """STAC Catalog metadata for Soar integration"""
-    id: str
-    title: str
-    description: str
-    children: List[StacChild]
-    total_children: int
+APP_REGION = os.getenv("APP_REGION")
+APP_PROVIDER = os.getenv("APP_PROVIDER")
+APP_HOSTNAME = os.getenv("APP_HOSTNAME")
 
 def create_geojson_feature(
     stac_item: Item,
@@ -151,7 +64,7 @@ def create_stac_child(child: Catalog | Collection) -> StacChild:
         "id": child.id,
         "title": child.title,
         "description": child.description,
-        "href": child.get_self_href(),
+        "stac_url": child.get_self_href(),
         "type": child.STAC_OBJECT_TYPE
     }
     if(child.STAC_OBJECT_TYPE == "Collection"):

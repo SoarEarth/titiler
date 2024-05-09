@@ -5,7 +5,9 @@ from dataclasses import dataclass
 from typing import List, Optional, cast
 
 from fastapi import Depends, Query
-from titiler.extensions.soar_util import create_geojson_feature, create_stac_child, create_stac_extent, save_or_post_data, StacCollectionMetadata
+from titiler.extensions.soar_util import create_geojson_feature, create_stac_child, create_stac_extent, save_or_post_data, APP_DEST_PATH, APP_HOSTNAME, APP_PROVIDER, APP_REGION
+from titiler.extensions.soar_models import StacCollectionMetadata
+
 from typing_extensions import Annotated, TypedDict
 
 from cogeo_mosaic.mosaic import MosaicJSON
@@ -146,17 +148,17 @@ class soarMosaicExtension(FactoryExtension):
                 "extent": create_stac_extent(collection.extent),
                 "extra_fields": collection.extra_fields,
                 "keywords": collection.keywords,
-                "total_assets": len(assets_features),
                 "root_catalog_url": root_catalog_url,
-                "app_region": os.getenv("APP_REGION"),
-                "app_provider": os.getenv("APP_PROVIDER"),
-                "app_url": os.getenv("APP_URL"),
+                "max_zoom": max_zoom,
+                "min_zoom": min_zoom,
+                "app_region": APP_REGION,
+                "app_provider": APP_PROVIDER,
+                "app_url": F"https://{APP_HOSTNAME}",
                 "assets_features": assets_features,
-                "child_links": [link.absolute_href for link in child_links],
+                "total_assets": len(assets_features),
+                "children_urls": [link.absolute_href for link in child_links],
                 "children": [create_stac_child(child) for child in children],
                 "total_children": len(child_links),
-                "max_zoom": max_zoom,
-                "min_zoom": min_zoom
             }
 
             if(data is not None):
@@ -169,10 +171,14 @@ class soarMosaicExtension(FactoryExtension):
             output_file_metadata = f"{metadata_path.strip('/')}/{collection.id.lower()}.json"
             output_file_mosaic = f"{mosaic_path.strip('/')}/{collection.id.lower()}.json"
 
-            messages.append(save_or_post_data(metadata_path, output_file_metadata, json.dumps(metadata)))
             if(data is not None):
                 messages.append(save_or_post_data(mosaic_path, output_file_mosaic, data.model_dump_json()))
+                mosaic_path = F"{APP_DEST_PATH}/{output_file_mosaic}"
+                metadata["mosaic_path"] = mosaic_path
+                metadata["mosaic_layer_url"] = F"https://{APP_HOSTNAME}/mosaicjson/tiles/WebMercatorQuad/{{z}}/{{x}}/{{y}}.png?url={mosaic_path}"
 
+            messages.append(save_or_post_data(metadata_path, output_file_metadata, json.dumps(metadata)))
+            
             response = {"messages": messages}
             if(return_data):
                 response["data"] = metadata

@@ -3,7 +3,8 @@
 from dataclasses import dataclass
 
 from fastapi import Depends, Query
-from titiler.extensions.soar_util import StacCatalogMetadata, create_stac_child, save_or_post_data
+from titiler.extensions.soar_util import create_stac_child, save_or_post_data
+from titiler.extensions.soar_models import StacCatalogMetadata
 from typing_extensions import Annotated
 
 from fastapi import Depends, Query
@@ -53,7 +54,8 @@ class soarStacExtension(FactoryExtension):
                 "title": root_catalog.title,
                 "description": root_catalog.description,
                 "children": [create_stac_child(child) for child in children],
-                "total_children": len(children)
+                "total_children": len(children),
+                "stac_url": root_catalog.get_self_href()
             }
             output_file_path = f"{dest_path.strip('/')}/{root_catalog.id.lower()}.json"
             messages = [save_or_post_data(dest_path, output_file_path, json.dumps(metadata))]

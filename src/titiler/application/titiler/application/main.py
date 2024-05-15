@@ -34,8 +34,7 @@ from titiler.extensions import (
     cogViewerExtension,
     stacExtension,
     stacViewerExtension,
-    soarMosaicExtension,
-    soarStacExtension
+    soarMosaicExtension
 )
 from titiler.mosaic.errors import MOSAIC_STATUS_CODES
 from titiler.mosaic.factory import MosaicTilerFactory
@@ -122,8 +121,7 @@ if not api_settings.disable_stac:
         reader=STACReader,
         router_prefix="/stac",
         extensions=[
-            stacViewerExtension(),
-            soarStacExtension()
+            stacViewerExtension()
         ],
     )
 

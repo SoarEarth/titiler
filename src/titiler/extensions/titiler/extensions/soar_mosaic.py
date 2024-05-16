@@ -5,7 +5,7 @@ from typing import List, Optional, cast
 
 from fastapi import Depends, Query
 from titiler.extensions.soar_util import create_geojson_feature, create_stac_child, create_stac_extent, save_or_post_data, APP_DEST_PATH, APP_HOSTNAME, APP_PROVIDER, APP_REGION
-from titiler.extensions.soar_models import StacCollectionMetadata
+from titiler.extensions.soar_models import StacAsset, StacCatalogMetadata, StacItem
 
 from typing_extensions import Annotated, TypedDict
 
@@ -25,12 +25,15 @@ logger = logging.getLogger('uvicorn.error')
 
 WEB_MERCATOR_TMS = morecantile.tms.get("WebMercatorQuad")
 
-try:
-    import pystac
-    from pystac import Collection, Item, Catalog, Link
-except ImportError:  # pragma: nocover
-    pystac = None  # type: ignore
-
+import pystac
+from pystac import Collection, Item, Catalog, Link
+from pystac.utils import (
+    datetime_to_str,
+    is_absolute_href,
+    make_absolute_href,
+    make_relative_href,
+    str_to_datetime,
+)
 
 class CreateBody(TypedDict):
     """POST Body for /create endpoint."""
@@ -99,27 +102,50 @@ class soarMosaicExtension(FactoryExtension):
 
             child_links = collection.get_child_links()
             logger.info(F"Collection {collection.title} has {len(child_links)} children.")
-
             children = [fetch_child(link) for link in child_links]
 
             assets_features = []
             assets_features_cog = []
             items_links = collection.get_item_links()
             logger.info(F"Collection {collection.title} has {len(items_links)} items.")
-
+            items = []
             for index, link in enumerate(items_links):
-                # print(link.to_dict())
                 item = Item.from_file(link.absolute_href)
-                if(item.assets["visual"] is not None):
-                    url = item.assets["visual"].get_absolute_href()
-                    geojson_feature = create_geojson_feature(item, url)
-                    assets_features.append(geojson_feature)
-                    current_count = len(assets_features)
-                    if(current_count == 1 or current_count % 25 == 24 or (index + 1) == len(items_links)):
-                        logger.info(F"Fetching cog feature: {url}")
-                        cog_feature = get_dataset_info(url, WEB_MERCATOR_TMS)
-                        assets_features_cog.append(cog_feature)
+                bounds = item.bbox
+                stac_item = StacItem(
+                    id=item.id,
+                    stac_url=link.absolute_href,
+                    bounds=bounds,
+                    properties=item.properties,
+                    extra_fields=item.extra_fields
+                )
+                if(item.datetime is not None):
+                    stac_item["datetime"] = datetime_to_str(item.datetime)
+                if(bounds is not None):
+                    stac_item["bounds_wkt"] = F"POLYGON(({bounds[0]} {bounds[1]}, {bounds[2]} {bounds[1]}, {bounds[2]} {bounds[3]}, {bounds[0]} {bounds[3]}, {bounds[0]} {bounds[1]}))"
+                item_assets = []
+                for i, k in enumerate(item.assets):
+                    asset = item.assets[k]
+                    item_assets.append(StacAsset(
+                        key=k,
+                        url=asset.get_absolute_href(),
+                        title=asset.title,
+                        description=asset.description,
+                        type=asset.media_type,
+                        roles=asset.roles,
+                        extra_fields=asset.extra_fields
+                    ))
+                    if(k.lower() == "visual"):
+                        url = asset.get_absolute_href()
+                        geojson_feature = create_geojson_feature(bounds, url)
+                        assets_features.append(geojson_feature)
+                        current_count = len(assets_features)
+                        if(current_count == 1 or current_count % 25 == 24 or (index + 1) == len(items_links)):
+                            logger.info(F"Fetching cog feature: {url}")
+                            assets_features_cog.append(get_dataset_info(url, WEB_MERCATOR_TMS))
 
+                stac_item["assets"] = item_assets
+                items.append(stac_item)
                 if(index % 5 == 4):
                     progress = (index + 1) / len(items_links) * 100  # Calculate progress as a percentage
                     logger.info(f"Progress: {progress:.2f}% - index: {index + 1} of {len(items_links)} items processed.")
@@ -139,9 +165,9 @@ class soarMosaicExtension(FactoryExtension):
             data: MosaicJSON | None = None
             if(len(assets_features) > 0):
                 data = MosaicJSON.from_features(assets_features, min_zoom, max_zoom)
-            
-            logger.info(F"MosaicJSON created for {collection.title}.")
-            metadata : StacCollectionMetadata = {
+                logger.info(F"MosaicJSON created for {collection.title}.")
+
+            metadata : StacCatalogMetadata = {
                 "id": collection.id,
                 "title": collection.title,
                 "description": collection.description,
@@ -154,11 +180,11 @@ class soarMosaicExtension(FactoryExtension):
                 "app_region": APP_REGION,
                 "app_provider": APP_PROVIDER,
                 "app_url": F"https://{APP_HOSTNAME}",
-                "assets_features": assets_features,
-                "total_assets": len(assets_features),
                 "children_urls": [link.absolute_href for link in child_links],
                 "children": [create_stac_child(child) for child in children],
                 "total_children": len(child_links),
+                "items": items,
+                "total_items": len(items),
             }
 
             if(is_collection == True):

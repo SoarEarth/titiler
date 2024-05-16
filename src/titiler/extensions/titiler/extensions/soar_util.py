@@ -1,7 +1,7 @@
 import morecantile
 import os
 from titiler.extensions.soar_models import GeojsonFeature, StacChild, StacExtent
-from pystac import Catalog, Collection, Item, Extent, Link
+from pystac import Catalog, Collection, Extent, Link
 from pystac.utils import datetime_to_str, str_to_datetime
 from pathlib import Path
 
@@ -17,12 +17,11 @@ APP_PROVIDER = os.getenv("APP_PROVIDER")
 APP_HOSTNAME = os.getenv("APP_HOSTNAME")
 
 def create_geojson_feature(
-    stac_item: Item,
+    bounds: list[float],
     url: str,
     tms: morecantile.TileMatrixSet = WEB_MERCATOR_TMS,
     ) -> GeojsonFeature:
         """Get dataset meta from STACK asset."""
-        bounds = stac_item.bbox
         return {
             "geometry": {
                 "type": "Polygon",
@@ -38,11 +37,7 @@ def create_geojson_feature(
             },
             "properties": {
                 "path": url,
-                "bounds": bounds,
-                "bounds_wkt": F"POLYGON(({bounds[0]} {bounds[1]}, {bounds[2]} {bounds[1]}, {bounds[2]} {bounds[3]}, {bounds[0]} {bounds[3]}, {bounds[0]} {bounds[1]}))",
-                "stac_id": stac_item.id,
-                "stac_href": stac_item.get_self_href(),
-                "stac_properties": stac_item.properties,
+                "bounds": bounds
             },
             "type": "Feature",
         }

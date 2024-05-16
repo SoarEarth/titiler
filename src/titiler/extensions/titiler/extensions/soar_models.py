@@ -36,27 +36,26 @@ class StacChild(TypedDict):
     type: str
     stac_url: str
 
-class StacAssetFeature(TypedDict):
-    """STAC Asset Feature."""
-    id: str
+class StacAsset(TypedDict):
+    key: str
+    url: str
     title: str
     description: str
-    type: str
-    url: str
-    extent: StacExtent
+    media_type: str
+    roles: list[str]
     extra_fields: Optional[dict[str, Any]]
-    keywords: Optional[list[str]]
+
+class StacItem(TypedDict):
+    id: str
+    stac_url: str
     bounds: Tuple[float, float, float, float] = [-180, -90, 180, 90]
     bounds_wkt: Optional[str]
-    center: Optional[Tuple[float, float, int]]
-    min_zoom: Optional[int]
-    max_zoom: Optional[int]
-    mosaic: dict[str, Any]
-    children: Optional[List[StacChild]]
-    total_children: Optional[int]
-    root_catalog_url: Optional[str]
+    datetime: str | None
+    properties: dict[str, Any]
+    extra_fields: Optional[dict[str, Any]]
+    assets: Optional[List[StacAsset]]
 
-class StacCollectionMetadata(TypedDict):
+class StacCatalogMetadata(TypedDict):
     """STAC Collection metadata for Soar integration."""
     id: str
     title: str
@@ -73,8 +72,8 @@ class StacCollectionMetadata(TypedDict):
     app_region: Optional[str]
     app_provider: Optional[str]
     app_url: Optional[str]
-    assets_features: List[Dict[str, Any]]
-    total_assets: Optional[int]
+    items: Optional[List[StacItem]]
+    total_items: Optional[int]
     children: Optional[List[StacChild]]
     total_children: Optional[int]
     mosaic: dict[str, Any]
@@ -83,12 +82,3 @@ class StacCollectionMetadata(TypedDict):
     center: Optional[Tuple[float, float, int]]
     mosaic_path: str
     mosaic_layer_url: str
-
-class StacCatalogMetadata(TypedDict):
-    """STAC Catalog metadata for Soar integration"""
-    id: str
-    title: str
-    description: str
-    children: List[StacChild]
-    total_children: int
-    stac_url: str

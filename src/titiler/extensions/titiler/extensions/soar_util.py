@@ -4,7 +4,7 @@ from titiler.extensions.soar_models import GeojsonFeature, StacChild, StacExtent
 from pystac import Catalog, Collection, Extent, Link
 from pystac.utils import datetime_to_str, str_to_datetime
 from pathlib import Path
-
+import math
 import logging
 import requests
 
@@ -15,6 +15,8 @@ APP_DEST_PATH = os.getenv("APP_DEST_PATH")
 APP_REGION = os.getenv("APP_REGION")
 APP_PROVIDER = os.getenv("APP_PROVIDER")
 APP_HOSTNAME = os.getenv("APP_HOSTNAME")
+CF_HOSTNAME = os.getenv("CF_HOSTNAME")
+CF_SECRET = os.getenv("CF_SECRET")
 
 def create_geojson_feature(
     bounds: list[float],
@@ -90,3 +92,53 @@ def save_or_post_data(dest_path: str, file_path: str, content: str) -> str:
             msg = F"File saved:  {file.absolute()}"
     logger.info(msg)
     return msg
+
+
+def latlon_to_tile(lat, lon, zoom):
+    lat_rad = math.radians(lat)
+    n = 2.0 ** zoom
+    xtile = int((lon + 180.0) / 360.0 * n)
+    ytile = int((1.0 - math.log(math.tan(lat_rad) + (1 / math.cos(lat_rad))) / math.pi) / 2.0 * n)
+    return (xtile, ytile)
+
+def bbox_to_tiles(bbox, zoom):
+    logger.info(F"bbox: {bbox}, zoom: {zoom}")
+    min_lon, min_lat, max_lon, max_lat = bbox
+
+    # Convert bounding box to tile coordinates
+    min_tile = latlon_to_tile(min_lat, min_lon, zoom)
+    max_tile = latlon_to_tile(max_lat, max_lon, zoom)
+    logger.info(F"min_tile: {min_tile}, max_tile: {max_tile}")
+    min_x, max_y = min_tile
+    max_x, min_y = max_tile
+    logger.info(F"min_x: {min_x}, min_y: {min_y}, max_x: {max_x}, max_y: {max_y}")
+    tiles = []
+    for x in range(min_x, max_x + 1):
+        for y in range(min_y, max_y + 1):
+            tiles.append((x, y))
+    logger.info(F"tiles: {tiles}")
+    return tiles
+
+
+def fetch_tile_and_forward_to_cf(listing_id, src_path, zoom, x, y):
+    headers = {
+        'soar-secret-key': CF_SECRET,
+        'Content-Type': 'image/png'
+    }
+    print(F"Fetching tile: z={zoom}&x={x}&y={y}")
+    response = requests.get(F"http://127.0.0.1:8000/mosaicjson/tiles/WebMercatorQuad/{zoom}/{x}/{y}.png?url={src_path}", stream=True)
+    if response.status_code == 200:
+        # Forwarding the PNG file to the new location with new headers
+        cf_url = F"https://{CF_HOSTNAME}/tile-cache?listingId={listing_id}&z={zoom}&x={x}&y={y}"
+        print(F"Forwarding tile: {cf_url}")
+        forward_response = requests.post(cf_url, headers=headers, data=response.raw)
+
+        # Checking if the forward request was successful
+        if forward_response.status_code == 200:
+            print('Data forwarded successfully.')
+        else:
+            print(f'Failed to forward data. Status code: {forward_response.status_code}')
+            print(forward_response.text)
+    else:
+        print(f'Failed to fetch data from the original URL. Status code: {response.status_code}')
+        print(response.text)

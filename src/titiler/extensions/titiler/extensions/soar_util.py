@@ -17,6 +17,7 @@ APP_PROVIDER = os.getenv("APP_PROVIDER")
 APP_HOSTNAME = os.getenv("APP_HOSTNAME")
 CF_HOSTNAME = os.getenv("CF_HOSTNAME")
 CF_SECRET = os.getenv("CF_SECRET")
+APP_SELF_URL = os.getenv("APP_SELF_URL")
 
 def create_geojson_feature(
     bounds: list[float],
@@ -126,7 +127,7 @@ def fetch_tile_and_forward_to_cf(listing_id, src_path, zoom, x, y):
         'Content-Type': 'image/png'
     }
     print(F"Fetching tile: z={zoom}&x={x}&y={y}")
-    response = requests.get(F"http://127.0.0.1:8000/mosaicjson/tiles/WebMercatorQuad/{zoom}/{x}/{y}.png?url={src_path}", stream=True)
+    response = requests.get(F"${APP_SELF_URL}/mosaicjson/tiles/WebMercatorQuad/{zoom}/{x}/{y}.png?url={src_path}", stream=True)
     if response.status_code == 200:
         # Forwarding the PNG file to the new location with new headers
         cf_url = F"https://{CF_HOSTNAME}/tile-cache?listingId={listing_id}&z={zoom}&x={x}&y={y}"

@@ -220,7 +220,7 @@ class soarMosaicExtension(FactoryExtension):
             return response
         
         @factory.router.get(
-            "/soar/tiles_cache", 
+            "/soar/generateTilesIntoCache", 
             responses={200: {"description": "Return created MosaicJSON"}},
         )
         def generate_tiles_into_cache(

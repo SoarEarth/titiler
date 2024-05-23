@@ -126,20 +126,17 @@ def fetch_tile_and_forward_to_cf(listing_id, src_path, zoom, x, y):
         'soar-secret-key': CF_SECRET,
         'Content-Type': 'image/png'
     }
-    print(F"Fetching tile: z={zoom}&x={x}&y={y}")
-    response = requests.get(F"${APP_SELF_URL}/mosaicjson/tiles/WebMercatorQuad/{zoom}/{x}/{y}.png?url={src_path}", stream=True)
-    if response.status_code == 200:
+    response = requests.get(F"{APP_SELF_URL}/mosaicjson/tiles/WebMercatorQuad/{zoom}/{x}/{y}.png?url={src_path}", stream=True)
+    if response.status_code == 200 or response.status_code == 204:
         # Forwarding the PNG file to the new location with new headers
         cf_url = F"https://{CF_HOSTNAME}/tile-cache?listingId={listing_id}&z={zoom}&x={x}&y={y}"
-        print(F"Forwarding tile: {cf_url}")
         forward_response = requests.post(cf_url, headers=headers, data=response.raw)
+        logger.info(F"Tile pushed: {cf_url} with response {forward_response.status_code}")
 
         # Checking if the forward request was successful
-        if forward_response.status_code == 200:
-            print('Data forwarded successfully.')
-        else:
-            print(f'Failed to forward data. Status code: {forward_response.status_code}')
-            print(forward_response.text)
+        if forward_response.status_code != 200:
+            logger.info(f'Failed to forward data. Status code: {forward_response.status_code}')
+            logger.info(forward_response.text)
     else:
-        print(f'Failed to fetch data from the original URL. Status code: {response.status_code}')
-        print(response.text)
+        logger.info(f'Failed to fetch data from the original URL. Status code: {response.status_code}')
+        logger.info(response.text)

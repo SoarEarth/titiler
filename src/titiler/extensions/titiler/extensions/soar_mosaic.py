@@ -224,7 +224,7 @@ class soarMosaicExtension(FactoryExtension):
             responses={200: {"description": "Return created MosaicJSON"}},
         )
         def generate_tiles_into_cache(
-            listing_id: Annotated[int, Query(description="Listing ID ")],
+            cache_key: Annotated[str, Query(description="Cache key")],
             zoom: Annotated[int, Query(description="Zoom level")],
             src_path=Depends(factory.path_dependency),
             backend_params=Depends(factory.backend_dependency),
@@ -243,7 +243,7 @@ class soarMosaicExtension(FactoryExtension):
                     tiles = bbox_to_tiles(mosaic.bounds, zoom)
                     for tile in tiles:
                         x, y = tile
-                        fetch_tile_and_forward_to_cf(listing_id, src_path, zoom, x, y)
+                        fetch_tile_and_forward_to_cf(cache_key, src_path, zoom, x, y)
 
                     return F"Total of {len(tiles)} tiles were send to CF cache."
 

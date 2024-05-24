@@ -121,7 +121,7 @@ def bbox_to_tiles(bbox, zoom):
     return tiles
 
 
-def fetch_tile_and_forward_to_cf(listing_id, src_path, zoom, x, y):
+def fetch_tile_and_forward_to_cf(cache_key, src_path, zoom, x, y):
     headers = {
         'soar-secret-key': CF_SECRET,
         'Content-Type': 'image/png'
@@ -129,7 +129,7 @@ def fetch_tile_and_forward_to_cf(listing_id, src_path, zoom, x, y):
     response = requests.get(F"{APP_SELF_URL}/mosaicjson/tiles/WebMercatorQuad/{zoom}/{x}/{y}.png?url={src_path}", stream=True)
     if response.status_code == 200 or response.status_code == 204:
         # Forwarding the PNG file to the new location with new headers
-        cf_url = F"https://{CF_HOSTNAME}/tile-cache?listingId={listing_id}&z={zoom}&x={x}&y={y}"
+        cf_url = F"https://{CF_HOSTNAME}/tile-cache?cacheKey={cache_key}&z={zoom}&x={x}&y={y}"
         forward_response = requests.post(cf_url, headers=headers, data=response.raw)
         logger.info(F"Tile pushed: {cf_url} with response {forward_response.status_code}")
 

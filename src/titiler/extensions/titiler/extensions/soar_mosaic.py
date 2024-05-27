@@ -40,8 +40,11 @@ from pystac.utils import (
 
 class CreateBody(TypedDict):
     """POST Body for /create endpoint."""
-
     links: List[str]
+
+class GenerateTilesBody(TypedDict):
+    """POST Body for /create endpoint."""
+    tiles: List[tuple[int, int, int]]
 
 @dataclass
 class soarMosaicExtension(FactoryExtension):
@@ -220,10 +223,47 @@ class soarMosaicExtension(FactoryExtension):
             return response
         
         @factory.router.get(
+            "/soar/getTiles", 
+            responses={200: {"description": "Return created MosaicJSON"}},
+        )
+        def get_tiles(
+            zoom: Annotated[int, Query(description="Zoom level")],
+            src_path=Depends(factory.path_dependency),
+            backend_params=Depends(factory.backend_dependency),
+            reader_params=Depends(factory.reader_dependency),
+            env=Depends(factory.environment_dependency),
+        ):
+            """Read a MosaicJSON and return z,x,y potential tiles for given zoom level"""
+            with rasterio.Env(**env):
+                with factory.reader(
+                    src_path,
+                    reader=factory.dataset_reader,
+                    reader_options={**reader_params},
+                    **backend_params,
+                ) as src_dst:
+                    mosaic : MosaicJSON = src_dst.mosaic_def
+                    return bbox_to_tiles(mosaic.bounds, zoom)
+                
+        @factory.router.post(
             "/soar/generateTilesIntoCache", 
             responses={200: {"description": "Return created MosaicJSON"}},
         )
         def generate_tiles_into_cache(
+            data: Annotated[GenerateTilesBody, Body(description="Tiles.")],
+            cache_key: Annotated[str, Query(description="Cache key")],
+            src_path=Depends(factory.path_dependency),
+        ):
+            """Pre"""
+            for tile in data["tiles"]:
+                z, x, y = tile
+                fetch_tile_and_forward_to_cf(cache_key, src_path, z, x, y)
+            return F"Total of {len(data.tiles)} tiles were send to CF cache."
+
+        @factory.router.get(
+            "/soar/generateTilesIntoCache", 
+            responses={200: {"description": "Return created MosaicJSON"}},
+        )
+        def generate_tiles_into_cache_by_zoom(
             cache_key: Annotated[str, Query(description="Cache key")],
             zoom: Annotated[int, Query(description="Zoom level")],
             src_path=Depends(factory.path_dependency),
@@ -242,9 +282,8 @@ class soarMosaicExtension(FactoryExtension):
                     mosaic : MosaicJSON = src_dst.mosaic_def
                     tiles = bbox_to_tiles(mosaic.bounds, zoom)
                     for tile in tiles:
-                        x, y = tile
-                        fetch_tile_and_forward_to_cf(cache_key, src_path, zoom, x, y)
-
+                        z, x, y = tile
+                        fetch_tile_and_forward_to_cf(cache_key, src_path, z, x, y)
                     return F"Total of {len(tiles)} tiles were send to CF cache."
 
 def fetch_children(links: list[Link]) -> list[Collection | Catalog]:

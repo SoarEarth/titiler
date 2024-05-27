@@ -116,8 +116,8 @@ def bbox_to_tiles(bbox, zoom):
     tiles = []
     for x in range(min_x, max_x + 1):
         for y in range(min_y, max_y + 1):
-            tiles.append((x, y))
-    logger.info(F"tiles: {tiles}")
+            tiles.append((zoom, x, y))
+    logger.info(F"Total tiles: {len(tiles)}")
     return tiles
 
 

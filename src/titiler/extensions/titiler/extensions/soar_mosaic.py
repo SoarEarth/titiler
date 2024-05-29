@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import List, Optional, cast
 
 from fastapi import Depends, Query
-from titiler.extensions.soar_util import bbox_to_tiles, create_geojson_feature, create_stac_child, create_stac_extent, fetch_tile_and_forward_to_cf, save_or_post_data, APP_DEST_PATH, APP_HOSTNAME, APP_PROVIDER, APP_REGION
+from titiler.extensions.soar_util import bbox_to_tiles, create_geojson_feature, create_stac_child, create_stac_extent, exists_in_cache, fetch_tile_and_forward_to_cf, save_or_post_data, APP_DEST_PATH, APP_HOSTNAME, APP_PROVIDER, APP_REGION
 from titiler.extensions.soar_models import StacAsset, StacCatalogMetadata, StacItem
 
 from typing_extensions import Annotated, TypedDict
@@ -22,7 +22,7 @@ import morecantile
 import rasterio
 
 import logging
-import requests
+import time
 
 logger = logging.getLogger('uvicorn.error')
 
@@ -253,12 +253,11 @@ class soarMosaicExtension(FactoryExtension):
             cache_key: Annotated[str, Query(description="Cache key")],
             src_path=Depends(factory.path_dependency),
         ):
-            """Pre"""
-            for tile in data["tiles"]:
-                z, x, y = tile
-                fetch_tile_and_forward_to_cf(cache_key, src_path, z, x, y)
-            return F"Total of {len(data.tiles)} tiles were send to CF cache."
-
+            """Generate tile into cache for given tiles"""
+            tiles = data["tiles"]
+            generate_tiles(tiles, cache_key, src_path)
+            return F"Total of {len(tiles)} tiles were send to CF cache."
+            
         @factory.router.get(
             "/soar/generateTilesIntoCache", 
             responses={200: {"description": "Return created MosaicJSON"}},
@@ -281,10 +280,21 @@ class soarMosaicExtension(FactoryExtension):
                 ) as src_dst:
                     mosaic : MosaicJSON = src_dst.mosaic_def
                     tiles = bbox_to_tiles(mosaic.bounds, zoom)
-                    for tile in tiles:
-                        z, x, y = tile
-                        fetch_tile_and_forward_to_cf(cache_key, src_path, z, x, y)
+                    generate_tiles(tiles, cache_key, src_path)
                     return F"Total of {len(tiles)} tiles were send to CF cache."
+
+def generate_tiles(tiles, cache_key, src_path):
+    total = len(tiles)
+    skip_cache_check = False
+    for idx, tile in enumerate(tiles):
+        z, x, y = tile
+        start_time = time.time()  # Record the start time
+        if(skip_cache_check == True or exists_in_cache(cache_key, z, x, y) == False):
+            fetch_tile_and_forward_to_cf(cache_key, src_path, z, x, y)
+            skip_cache_check = True
+        end_time = time.time()  # Record the end time
+        elapsed_time = end_time - start_time  # Calculate elapsed time
+        logger.info(f"Processed {idx} of {total}. [{cache_key},{z},{x},{y}] took {elapsed_time:.2f} seconds")
 
 def fetch_children(links: list[Link]) -> list[Collection | Catalog]:
     """Fetch STAC children."""

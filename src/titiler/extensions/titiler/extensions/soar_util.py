@@ -2,7 +2,7 @@ import morecantile
 import os
 from titiler.extensions.soar_models import GeojsonFeature, StacChild, StacExtent
 from pystac import Catalog, Collection, Extent, Link
-from pystac.utils import datetime_to_str, str_to_datetime
+from pystac.utils import datetime_to_str
 from pathlib import Path
 import math
 import logging
@@ -120,6 +120,17 @@ def bbox_to_tiles(bbox, zoom):
     logger.info(F"Total tiles: {len(tiles)}")
     return tiles
 
+def exists_in_cache(cache_key, zoom, x, y):
+    headers = {
+        'soar-secret-key': CF_SECRET,
+        'Content-Type': 'image/png'
+    }
+    cf_url = F"https://{CF_HOSTNAME}/tile-cache/exists?cacheKey={cache_key}&z={zoom}&x={x}&y={y}"
+    response = requests.get(cf_url, headers=headers)
+    if response.status_code == 200:
+        return True
+    else:
+        return False
 
 def fetch_tile_and_forward_to_cf(cache_key, src_path, zoom, x, y):
     headers = {
@@ -131,7 +142,6 @@ def fetch_tile_and_forward_to_cf(cache_key, src_path, zoom, x, y):
         # Forwarding the PNG file to the new location with new headers
         cf_url = F"https://{CF_HOSTNAME}/tile-cache?cacheKey={cache_key}&z={zoom}&x={x}&y={y}"
         forward_response = requests.post(cf_url, headers=headers, data=response.raw)
-        logger.info(F"Tile pushed: {cf_url} with response {forward_response.status_code}")
 
         # Checking if the forward request was successful
         if forward_response.status_code != 200:

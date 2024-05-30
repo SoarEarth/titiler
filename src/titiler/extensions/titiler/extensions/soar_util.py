@@ -1,5 +1,6 @@
 import morecantile
 import os
+from titiler.application.settings import ApiSettings
 from titiler.extensions.soar_models import GeojsonFeature, StacChild, StacExtent
 from pystac import Catalog, Collection, Extent, Link
 from pystac.utils import datetime_to_str
@@ -18,6 +19,8 @@ APP_HOSTNAME = os.getenv("APP_HOSTNAME")
 CF_HOSTNAME = os.getenv("CF_HOSTNAME")
 CF_SECRET = os.getenv("CF_SECRET")
 APP_SELF_URL = os.getenv("APP_SELF_URL")
+
+api_settings = ApiSettings()
 
 def create_geojson_feature(
     bounds: list[float],
@@ -137,7 +140,7 @@ def fetch_tile_and_forward_to_cf(cache_key, src_path, zoom, x, y):
         'soar-secret-key': CF_SECRET,
         'Content-Type': 'image/png'
     }
-    response = requests.get(F"{APP_SELF_URL}/mosaicjson/tiles/WebMercatorQuad/{zoom}/{x}/{y}.png?url={src_path}", stream=True)
+    response = requests.get(F"{APP_SELF_URL}/mosaicjson/tiles/WebMercatorQuad/{zoom}/{x}/{y}.png?url={src_path}&access_token={api_settings.global_access_token}", stream=True)
     if response.status_code == 200 or response.status_code == 204:
         # Forwarding the PNG file to the new location with new headers
         cf_url = F"https://{CF_HOSTNAME}/tile-cache?cacheKey={cache_key}&z={zoom}&x={x}&y={y}"

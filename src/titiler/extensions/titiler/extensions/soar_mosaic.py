@@ -1,42 +1,26 @@
 """rio-stac Extension."""
-
-from dataclasses import dataclass
-from typing import List, Optional, cast
-
-from fastapi import Depends, Query
-from titiler.extensions.soar_util import bbox_to_tiles, create_geojson_feature, create_stac_child, create_stac_extent, exists_in_cache, fetch_tile_and_forward_to_cf, save_or_post_data, APP_DEST_PATH, APP_HOSTNAME, APP_PROVIDER, APP_REGION
-from titiler.extensions.soar_models import StacAsset, StacCatalogMetadata, StacItem
-
-from typing_extensions import Annotated, TypedDict
-
-from cogeo_mosaic.mosaic import MosaicJSON
-from fastapi import Body, Depends, Query
-
-from titiler.core.factory import BaseTilerFactory, FactoryExtension
+import pystac
 import json
-from typing import List
-
-from cogeo_mosaic.utils import get_dataset_info
-
-import morecantile
 import rasterio
-
 import logging
 import time
 
-logger = logging.getLogger('uvicorn.error')
+from dataclasses import dataclass
+from typing import List, Optional, cast
+from typing_extensions import Annotated, TypedDict
 
-WEB_MERCATOR_TMS = morecantile.tms.get("WebMercatorQuad")
+from fastapi import Depends, Query, Body, Depends, Query
+from titiler.extensions.soar_util import *
+from titiler.extensions.soar_models import StacAsset, StacCatalogMetadata, StacItem
+from titiler.core.factory import BaseTilerFactory, FactoryExtension
 
-import pystac
+from cogeo_mosaic.mosaic import MosaicJSON
+from cogeo_mosaic.utils import get_dataset_info
 from pystac import Collection, Item, Catalog, Link
-from pystac.utils import (
-    datetime_to_str,
-    is_absolute_href,
-    make_absolute_href,
-    make_relative_href,
-    str_to_datetime,
-)
+from pystac.utils import datetime_to_str
+
+
+logger = logging.getLogger('uvicorn.error')
 
 class CreateBody(TypedDict):
     """POST Body for /create endpoint."""
@@ -67,7 +51,6 @@ class soarMosaicExtension(FactoryExtension):
         ):
             """Create MosaicJSON from given list of COGs links."""
             data = MosaicJSON.from_urls(data["links"])
-
             messages = []
             output_file_mosaic = f"{mosaic_path}/mosaic.json"
             

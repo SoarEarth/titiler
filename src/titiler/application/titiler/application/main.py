@@ -34,7 +34,8 @@ from titiler.extensions import (
     cogViewerExtension,
     stacExtension,
     stacViewerExtension,
-    soarMosaicExtension
+    soarMosaicExtension,
+    soarCogExtension
 )
 from titiler.mosaic.errors import MOSAIC_STATUS_CODES
 from titiler.mosaic.factory import MosaicTilerFactory
@@ -103,7 +104,8 @@ if not api_settings.disable_cog:
         extensions=[
             cogValidateExtension(),
             cogViewerExtension(),
-            stacExtension()
+            stacExtension(),
+            soarCogExtension()
         ],
     )
 

@@ -8,6 +8,7 @@ from pathlib import Path
 import math
 import logging
 import requests
+import json
 
 logger = logging.getLogger('uvicorn.error')
 
@@ -153,3 +154,10 @@ def fetch_tile_and_forward_to_cf(cache_key, src_path, zoom, x, y):
     else:
         logger.info(f'Failed to fetch data from the original URL. Status code: {response.status_code}')
         logger.info(response.text)
+
+def to_json(obj):
+    return json.dumps(
+        obj,
+        default=lambda o: o.__dict__,
+        sort_keys=True,
+        indent=4)

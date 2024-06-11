@@ -1,5 +1,7 @@
 from typing_extensions import TypedDict
 from typing import Any, Dict, List, Literal, Optional, Tuple
+from rio_tiler.models import Info as InfoTiler
+from rio_cogeo.models import Info as InfoCogeo
 
 class GeojsonGemetry(TypedDict):
     """GeoJSON Geometry."""
@@ -82,3 +84,13 @@ class StacCatalogMetadata(TypedDict):
     center: Optional[Tuple[float, float, int]]
     mosaic_path: str
     mosaic_layer_url: str
+
+class COGMetadata(TypedDict):
+    """COG metadata."""
+    info_tiler: Optional[InfoTiler]
+    info_cogeo: Optional[InfoCogeo]
+    is_valid: bool
+    bounds_wkt: Optional[str]
+    min_zoom: Optional[int]
+    max_zoom: Optional[int]
+    tile_url: Optional[str]

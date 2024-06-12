@@ -27,7 +27,7 @@ class COGMetadataResponse(TypedDict):
 
 @dataclass
 class soarCogExtension(FactoryExtension):
-    """Add /soar/info endpoint to a COG TilerFactory."""
+    """Add /soar endpoints to a COG TilerFactory."""
 
     backend_dependency: Type[DefaultDependency] = DefaultDependency
 
@@ -40,11 +40,11 @@ class soarCogExtension(FactoryExtension):
         ), "'rio-cogeo' must be installed to use CogValidateExtension"
 
         @factory.router.get(
-            "/soar/info",
+            "/soar/metadata",
             response_model=COGMetadataResponse,
             responses={200: {"description": "Return created COG Metadata file"}},
         )
-        def info(
+        def metadata(
             src_path=Depends(factory.path_dependency),
             reader_params=Depends(factory.reader_dependency),
             env=Depends(factory.environment_dependency),
@@ -66,7 +66,9 @@ class soarCogExtension(FactoryExtension):
                         "max_zoom": info.maxzoom,
                         "min_zoom": info.minzoom,
                         "bounds_wkt": bounds_wkt,
-                        "tile_url": tile_url
+                        "tile_url": tile_url,
+                        "errors": info_cogeo.COG_errors,
+                        "warnings": info_cogeo.COG_warnings
                     }
                     messages = []
                     if(metadata_path is not None):

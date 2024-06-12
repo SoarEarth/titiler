@@ -94,3 +94,5 @@ class COGMetadata(TypedDict):
     min_zoom: Optional[int]
     max_zoom: Optional[int]
     tile_url: Optional[str]
+    errors: Optional[List[str]]
+    warnings: Optional[List[str]]

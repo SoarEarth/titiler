@@ -86,20 +86,19 @@ class soarCogExtension(FactoryExtension):
 
         @factory.router.get(
             "/soar/preview",
-            # response_model=COGMetadataResponse,
             responses={200: {"description": "Return created COG Metadata file"}},
         )
         def preview(
             src_path=Depends(factory.path_dependency),
-            dest_path: Annotated[Optional[str], Query(description="Destination path to save the preview PNG file.")] = None,
+            preview_path: Annotated[Optional[str], Query(description="Destination path to save the preview PNG file.")] = None,
             image_params=Depends(self.img_preview_dependency),
             return_data: Annotated[bool, Query(description="Return metadata as response too")] = False,
         ):
             """Create preview and save into dest_path"""
             content = fetch_preview(src_path, image_params)
-            if(dest_path is not None):
-                output_file = f"{dest_path.strip('/')}/preview.png"
-                save_or_post_bytes(dest_path, output_file, content)
+            if(preview_path is not None):
+                output_file = f"{preview_path.strip('/')}/preview.png"
+                save_or_post_bytes(preview_path, output_file, content)
             if(return_data):
                 return Response(content, media_type="image/png")
             return Response(None, media_type="image/png")

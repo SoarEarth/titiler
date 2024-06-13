@@ -2,17 +2,17 @@
 
 from dataclasses import dataclass
 from typing import List, Optional, Type
-from titiler.extensions.soar_util import APP_HOSTNAME, save_or_post_data, to_json
+from titiler.extensions.soar_util import APP_HOSTNAME, save_or_post_data, to_json, fetch_preview, save_or_post_bytes
 from typing_extensions import TypedDict
 import rasterio
 import logging
 
-from fastapi import Depends, Query
+from fastapi import Depends, Query, Response
 from titiler.extensions.soar_models import COGMetadata
 from typing_extensions import Annotated
 
 from titiler.core.factory import BaseTilerFactory, FactoryExtension
-from titiler.core.dependencies import DefaultDependency
+from titiler.core.dependencies import DefaultDependency, PreviewParams
 
 try:
     from rio_cogeo.cogeo import cog_info
@@ -30,6 +30,7 @@ class soarCogExtension(FactoryExtension):
     """Add /soar endpoints to a COG TilerFactory."""
 
     backend_dependency: Type[DefaultDependency] = DefaultDependency
+    img_preview_dependency: Type[DefaultDependency] = PreviewParams
 
 
     def register(self, factory: BaseTilerFactory):
@@ -82,3 +83,23 @@ class soarCogExtension(FactoryExtension):
                         response["data"] = None
                     return response
 
+
+        @factory.router.get(
+            "/soar/preview",
+            # response_model=COGMetadataResponse,
+            responses={200: {"description": "Return created COG Metadata file"}},
+        )
+        def preview(
+            src_path=Depends(factory.path_dependency),
+            dest_path: Annotated[Optional[str], Query(description="Destination path to save the preview PNG file.")] = None,
+            image_params=Depends(self.img_preview_dependency),
+            return_data: Annotated[bool, Query(description="Return metadata as response too")] = False,
+        ):
+            """Create preview and save into dest_path"""
+            content = fetch_preview(src_path, image_params)
+            if(dest_path is not None):
+                output_file = f"{dest_path.strip('/')}/preview.png"
+                save_or_post_bytes(dest_path, output_file, content)
+            if(return_data):
+                return Response(content, media_type="image/png")
+            return Response(None, media_type="image/png")

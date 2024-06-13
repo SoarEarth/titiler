@@ -1,6 +1,7 @@
 import morecantile
 import os
 from titiler.application.settings import ApiSettings
+from titiler.core.dependencies import PreviewParams
 from titiler.extensions.soar_models import GeojsonFeature, StacChild, StacExtent
 from pystac import Catalog, Collection, Extent, Link
 from pystac.utils import datetime_to_str
@@ -154,6 +155,36 @@ def fetch_tile_and_forward_to_cf(cache_key, src_path, zoom, x, y):
     else:
         logger.info(f'Failed to fetch data from the original URL. Status code: {response.status_code}')
         logger.info(response.text)
+
+def fetch_preview(src_path,preview_params: PreviewParams) -> bytes:
+    url = src_path.replace("%20", "%2520")
+    params = F"url={url}&access_token={api_settings.global_access_token}&max_size={preview_params.max_size}"
+    if(preview_params.height is not None):
+        params += F"&height={preview_params.height}"
+    if(preview_params.width is not None):
+        params += F"&width={preview_params.width}"
+    response = requests.get(F"{APP_SELF_URL}/cog/preview.png?{params}", stream=True)
+    if response.status_code == 200:
+        return response.content
+    else:
+        raise Exception(f"Failed to fetch data from the original URL. Status code: {response.status_code}")
+
+def save_or_post_bytes(dest_path: str, file_path: str, content: bytes) -> str:
+    msg = F"dest_path [{dest_path}] or file_path [{file_path}] are not defined or are invalid"
+    if(dest_path is not None):
+        if (dest_path.startswith("https://")):
+            logger.info(F"Sending file via POST to: {dest_path}")
+            requests.post(dest_path, data=content)
+            msg = F"File sent:  {dest_path}"
+        else:
+            logger.info(F"Saving file: {file_path}")
+            file = Path(F"{APP_DEST_PATH}/{file_path}")
+            file.parent.mkdir(exist_ok=True, parents=True)
+            file.write_bytes(content)
+            msg = F"File saved:  {file.absolute()}"
+    logger.info(msg)
+    return msg
+
 
 def to_json(obj):
     return json.dumps(

@@ -97,7 +97,7 @@ class soarCogExtension(FactoryExtension):
             """Create preview and save into dest_path"""
             content = fetch_preview(src_path, image_params)
             if(preview_path is not None):
-                output_file = f"{preview_path.strip('/')}/preview.png"
+                output_file = f"{preview_path.strip('/')}/preview_s{image_params.max_size}.png"
                 save_or_post_bytes(preview_path, output_file, content)
             if(return_data):
                 return Response(content, media_type="image/png")

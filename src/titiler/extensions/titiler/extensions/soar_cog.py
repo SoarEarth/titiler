@@ -2,10 +2,11 @@
 
 from dataclasses import dataclass
 from typing import List, Optional, Type
-from titiler.extensions.soar_util import APP_HOSTNAME, save_or_post_data, to_json, fetch_preview, save_or_post_bytes
+from titiler.extensions.soar_util import APP_HOSTNAME, bbox_to_tiles, exists_in_cache, fetch_tile_and_forward_to_cf_cog, save_or_post_data, to_json, fetch_preview, save_or_post_bytes
 from typing_extensions import TypedDict
 import rasterio
 import logging
+import time
 
 from fastapi import Depends, Query, Response
 from titiler.extensions.soar_models import COGMetadata
@@ -102,3 +103,36 @@ class soarCogExtension(FactoryExtension):
             if(return_data):
                 return Response(content, media_type="image/png")
             return Response(None, media_type="image/png")
+
+        @factory.router.get(
+            "/soar/generateTilesIntoCache", 
+            responses={200: {"description": "Return created MosaicJSON"}},
+        )
+        def generate_tiles_into_cache_by_zoom(
+            cache_key: Annotated[str, Query(description="Cache key")],
+            zoom: Annotated[int, Query(description="Zoom level")],
+            src_path=Depends(factory.path_dependency),
+            reader_params=Depends(factory.reader_dependency),
+            env=Depends(factory.environment_dependency),
+        ):
+            """Read a COG and pre-tile requested zoom level"""
+            with rasterio.Env(**env):
+                with factory.reader(src_path, **reader_params) as src_dst:
+                    info = src_dst.info()
+                    tiles = bbox_to_tiles(info.bounds, zoom)
+                    generate_tiles(tiles, cache_key, src_path)
+                    return F"Total of {len(tiles)} tiles were send to CF cache."
+
+
+def generate_tiles(tiles, cache_key, src_path):
+    total = len(tiles)
+    skip_cache_check = False
+    for idx, tile in enumerate(tiles):
+        z, x, y = tile
+        start_time = time.time()  # Record the start time
+        if(skip_cache_check == True or exists_in_cache(cache_key, z, x, y) == False):
+            fetch_tile_and_forward_to_cf_cog(cache_key, src_path, z, x, y)
+            skip_cache_check = True
+        end_time = time.time()  # Record the end time
+        elapsed_time = end_time - start_time  # Calculate elapsed time
+        logger.info(f"Processed {idx} of {total}. [{cache_key},{z},{x},{y}] took {elapsed_time:.2f} seconds")

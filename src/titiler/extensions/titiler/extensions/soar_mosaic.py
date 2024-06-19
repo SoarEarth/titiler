@@ -273,7 +273,7 @@ def generate_tiles(tiles, cache_key, src_path):
         z, x, y = tile
         start_time = time.time()  # Record the start time
         if(skip_cache_check == True or exists_in_cache(cache_key, z, x, y) == False):
-            fetch_tile_and_forward_to_cf(cache_key, src_path, z, x, y)
+            fetch_tile_and_forward_to_cf_mosaic(cache_key, src_path, z, x, y)
             skip_cache_check = True
         end_time = time.time()  # Record the end time
         elapsed_time = end_time - start_time  # Calculate elapsed time

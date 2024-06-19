@@ -137,12 +137,19 @@ def exists_in_cache(cache_key, zoom, x, y):
     else:
         return False
 
-def fetch_tile_and_forward_to_cf(cache_key, src_path, zoom, x, y):
+def fetch_tile_and_forward_to_cf_mosaic(cache_key, src_path, zoom, x, y):
+    response = requests.get(F"{APP_SELF_URL}/mosaicjson/tiles/WebMercatorQuad/{zoom}/{x}/{y}.png?url={src_path}&access_token={api_settings.global_access_token}", stream=True)
+    forward_to_cf(cache_key, response, zoom, x, y)
+
+def fetch_tile_and_forward_to_cf_cog(cache_key, src_path, zoom, x, y):
+    response = requests.get(F"{APP_SELF_URL}/cog/tiles/WebMercatorQuad/{zoom}/{x}/{y}.png?url={src_path}&access_token={api_settings.global_access_token}", stream=True)
+    forward_to_cf(cache_key, response, zoom, x, y)
+
+def forward_to_cf(cache_key, response, zoom, x, y):
     headers = {
         'soar-secret-key': CF_SECRET,
         'Content-Type': 'image/png'
     }
-    response = requests.get(F"{APP_SELF_URL}/mosaicjson/tiles/WebMercatorQuad/{zoom}/{x}/{y}.png?url={src_path}&access_token={api_settings.global_access_token}", stream=True)
     if response.status_code == 200 or response.status_code == 204:
         # Forwarding the PNG file to the new location with new headers
         cf_url = F"https://{CF_HOSTNAME}/tile-cache?cacheKey={cache_key}&z={zoom}&x={x}&y={y}"
@@ -155,6 +162,7 @@ def fetch_tile_and_forward_to_cf(cache_key, src_path, zoom, x, y):
     else:
         logger.info(f'Failed to fetch data from the original URL. Status code: {response.status_code}')
         logger.info(response.text)
+
 
 def fetch_preview(src_path,preview_params: PreviewParams) -> bytes:
     url = src_path.replace("%20", "%2520")

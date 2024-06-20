@@ -142,7 +142,8 @@ def fetch_tile_and_forward_to_cf_mosaic(cache_key, src_path, zoom, x, y):
     forward_to_cf(cache_key, response, zoom, x, y)
 
 def fetch_tile_and_forward_to_cf_cog(cache_key, src_path, zoom, x, y):
-    response = requests.get(F"{APP_SELF_URL}/cog/tiles/WebMercatorQuad/{zoom}/{x}/{y}.png?url={src_path}&access_token={api_settings.global_access_token}", stream=True)
+    url = src_path.replace("%20", "%2520")
+    response = requests.get(F"{APP_SELF_URL}/cog/tiles/WebMercatorQuad/{zoom}/{x}/{y}.png?url={url}&access_token={api_settings.global_access_token}", stream=True)
     forward_to_cf(cache_key, response, zoom, x, y)
 
 def forward_to_cf(cache_key, response, zoom, x, y):

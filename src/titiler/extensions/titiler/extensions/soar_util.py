@@ -10,6 +10,7 @@ import math
 import logging
 import requests
 import json
+from urllib.parse import urlparse, urlencode, quote, urlunparse, parse_qsl
 
 logger = logging.getLogger('uvicorn.error')
 
@@ -138,11 +139,12 @@ def exists_in_cache(cache_key, zoom, x, y):
         return False
 
 def fetch_tile_and_forward_to_cf_mosaic(cache_key, src_path, zoom, x, y):
-    response = requests.get(F"{APP_SELF_URL}/mosaicjson/tiles/WebMercatorQuad/{zoom}/{x}/{y}.png?url={src_path}&access_token={api_settings.global_access_token}", stream=True)
+    url = encode_url_path_segments(src_path)
+    response = requests.get(F"{APP_SELF_URL}/mosaicjson/tiles/WebMercatorQuad/{zoom}/{x}/{y}.png?url={url}&access_token={api_settings.global_access_token}", stream=True)
     forward_to_cf(cache_key, response, zoom, x, y)
 
 def fetch_tile_and_forward_to_cf_cog(cache_key, src_path, zoom, x, y):
-    url = src_path.replace("%20", "%2520")
+    url = encode_url_path_segments(src_path)
     response = requests.get(F"{APP_SELF_URL}/cog/tiles/WebMercatorQuad/{zoom}/{x}/{y}.png?url={url}&access_token={api_settings.global_access_token}", stream=True)
     forward_to_cf(cache_key, response, zoom, x, y)
 
@@ -166,7 +168,7 @@ def forward_to_cf(cache_key, response, zoom, x, y):
 
 
 def fetch_preview(src_path,preview_params: PreviewParams) -> bytes:
-    url = src_path.replace("%20", "%2520")
+    url = encode_url_path_segments(src_path)
     params = F"url={url}&access_token={api_settings.global_access_token}&max_size={preview_params.max_size}"
     if(preview_params.height is not None):
         params += F"&height={preview_params.height}"
@@ -201,3 +203,32 @@ def to_json(obj):
         default=lambda o: o.__dict__,
         sort_keys=True,
         indent=4)
+
+def encode_url_path_segments(url):
+    # Parse the URL
+    parsed_url = urlparse(url)
+
+    # Split the path into segments
+    path_segments = parsed_url.path.split('/')
+
+    # Encode each segment individually
+    encoded_segments = [quote(segment) for segment in path_segments]
+
+    # Reconstruct the path
+    encoded_path = '/'.join(encoded_segments)
+
+    # Encode query parameters
+    query_params = parse_qsl(parsed_url.query)
+    encoded_query = urlencode({quote(k): quote(v) for k, v in query_params})
+
+    # Reconstruct the full URL
+    encoded_url = urlunparse((
+        parsed_url.scheme,
+        parsed_url.netloc,
+        encoded_path,
+        parsed_url.params,
+        encoded_query,
+        parsed_url.fragment
+    ))
+
+    return encoded_url

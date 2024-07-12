@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 from typing import List, Optional, Type
-from titiler.extensions.soar_util import APP_HOSTNAME, bbox_to_tiles, exists_in_cache, fetch_tile_and_forward_to_cf_cog, save_or_post_data, to_json, fetch_preview, save_or_post_bytes
+from titiler.extensions.soar_util import APP_HOSTNAME, bbox_to_tiles, exists_in_cache, fetch_tile_and_forward_to_cf_cog, save_or_post_data, to_json, fetch_preview, save_or_post_bytes, encode_url_path_segments
 from typing_extensions import TypedDict
 import rasterio
 import logging
@@ -54,13 +54,14 @@ class soarCogExtension(FactoryExtension):
             return_data: Annotated[bool, Query(description="Return metadata as response too")] = False,
                 ):
             """Read a COG info"""
-            info_cogeo = cog_info(src_path)
+            src_path_encoded = encode_url_path_segments(src_path)
+            info_cogeo = cog_info(src_path_encoded)
             with rasterio.Env(**env):
-                with factory.reader(src_path, **reader_params) as src_dst:
+                with factory.reader(src_path_encoded, **reader_params) as src_dst:
                     info = src_dst.info()
                     bounds = info.bounds
                     bounds_wkt = f"POLYGON(({bounds.left} {bounds.bottom}, {bounds.left} {bounds.top}, {bounds.right} {bounds.top}, {bounds.right} {bounds.bottom}, {bounds.left} {bounds.bottom}))"
-                    tile_url =  F"https://{APP_HOSTNAME}/cog/tiles/WebMercatorQuad/{{z}}/{{x}}/{{y}}.png?url={src_path}"
+                    tile_url =  F"https://{APP_HOSTNAME}/cog/tiles/WebMercatorQuad/{{z}}/{{x}}/{{y}}.png?url={encode_url_path_segments(src_path_encoded)}"
                     metadata:  COGMetadata = {
                         "info_cogeo": info_cogeo,
                         "info_tiler": info,

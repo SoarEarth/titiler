@@ -96,3 +96,12 @@ class COGMetadata(TypedDict):
     tile_url: Optional[str]
     errors: Optional[List[str]]
     warnings: Optional[List[str]]
+
+class MosaicJSONMetadata(TypedDict):
+    """MosaicJSON metadata."""
+    bounds_wkt: Optional[str]
+    min_zoom: Optional[int]
+    max_zoom: Optional[int]
+    tile_url: Optional[str]
+    tilematrixset: Optional[str]
+    center: Optional[Tuple[float, float, int]]

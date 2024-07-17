@@ -1,6 +1,7 @@
 import morecantile
 import os
 from titiler.application.settings import ApiSettings
+from titiler.core.dependencies import PreviewParams
 from titiler.extensions.soar_models import GeojsonFeature, StacChild, StacExtent
 from pystac import Catalog, Collection, Extent, Link
 from pystac.utils import datetime_to_str
@@ -8,6 +9,8 @@ from pathlib import Path
 import math
 import logging
 import requests
+import json
+from urllib.parse import urlparse, urlencode, quote, urlunparse, parse_qsl
 
 logger = logging.getLogger('uvicorn.error')
 
@@ -135,12 +138,21 @@ def exists_in_cache(cache_key, zoom, x, y):
     else:
         return False
 
-def fetch_tile_and_forward_to_cf(cache_key, src_path, zoom, x, y):
+def fetch_tile_and_forward_to_cf_mosaic(cache_key, src_path, zoom, x, y):
+    url = encode_url_path_segments(src_path)
+    response = requests.get(F"{APP_SELF_URL}/mosaicjson/tiles/WebMercatorQuad/{zoom}/{x}/{y}.png?url={url}&access_token={api_settings.global_access_token}", stream=True)
+    forward_to_cf(cache_key, response, zoom, x, y)
+
+def fetch_tile_and_forward_to_cf_cog(cache_key, src_path, zoom, x, y):
+    url = encode_url_path_segments(src_path)
+    response = requests.get(F"{APP_SELF_URL}/cog/tiles/WebMercatorQuad/{zoom}/{x}/{y}.png?url={url}&access_token={api_settings.global_access_token}", stream=True)
+    forward_to_cf(cache_key, response, zoom, x, y)
+
+def forward_to_cf(cache_key, response, zoom, x, y):
     headers = {
         'soar-secret-key': CF_SECRET,
         'Content-Type': 'image/png'
     }
-    response = requests.get(F"{APP_SELF_URL}/mosaicjson/tiles/WebMercatorQuad/{zoom}/{x}/{y}.png?url={src_path}&access_token={api_settings.global_access_token}", stream=True)
     if response.status_code == 200 or response.status_code == 204:
         # Forwarding the PNG file to the new location with new headers
         cf_url = F"https://{CF_HOSTNAME}/tile-cache?cacheKey={cache_key}&z={zoom}&x={x}&y={y}"
@@ -153,3 +165,70 @@ def fetch_tile_and_forward_to_cf(cache_key, src_path, zoom, x, y):
     else:
         logger.info(f'Failed to fetch data from the original URL. Status code: {response.status_code}')
         logger.info(response.text)
+
+
+def fetch_preview(src_path,preview_params: PreviewParams) -> bytes:
+    url = encode_url_path_segments(src_path)
+    params = F"url={url}&access_token={api_settings.global_access_token}&max_size={preview_params.max_size}"
+    if(preview_params.height is not None):
+        params += F"&height={preview_params.height}"
+    if(preview_params.width is not None):
+        params += F"&width={preview_params.width}"
+    response = requests.get(F"{APP_SELF_URL}/cog/preview.png?{params}", stream=True)
+    if response.status_code == 200:
+        return response.content
+    else:
+        raise Exception(f"Failed to fetch data from the original URL. Status code: {response.status_code}")
+
+def save_or_post_bytes(dest_path: str, file_path: str, content: bytes) -> str:
+    msg = F"dest_path [{dest_path}] or file_path [{file_path}] are not defined or are invalid"
+    if(dest_path is not None):
+        if (dest_path.startswith("https://")):
+            logger.info(F"Sending file via POST to: {dest_path}")
+            requests.post(dest_path, data=content)
+            msg = F"File sent:  {dest_path}"
+        else:
+            logger.info(F"Saving file: {file_path}")
+            file = Path(F"{APP_DEST_PATH}/{file_path}")
+            file.parent.mkdir(exist_ok=True, parents=True)
+            file.write_bytes(content)
+            msg = F"File saved:  {file.absolute()}"
+    logger.info(msg)
+    return msg
+
+
+def to_json(obj):
+    return json.dumps(
+        obj,
+        default=lambda o: o.__dict__,
+        sort_keys=True,
+        indent=4)
+
+def encode_url_path_segments(url):
+    # Parse the URL
+    parsed_url = urlparse(url)
+
+    # Split the path into segments
+    path_segments = parsed_url.path.split('/')
+
+    # Encode each segment individually
+    encoded_segments = [quote(segment) for segment in path_segments]
+
+    # Reconstruct the path
+    encoded_path = '/'.join(encoded_segments)
+
+    # Encode query parameters
+    query_params = parse_qsl(parsed_url.query)
+    encoded_query = urlencode({quote(k): quote(v) for k, v in query_params})
+
+    # Reconstruct the full URL
+    encoded_url = urlunparse((
+        parsed_url.scheme,
+        parsed_url.netloc,
+        encoded_path,
+        parsed_url.params,
+        encoded_query,
+        parsed_url.fragment
+    ))
+
+    return encoded_url

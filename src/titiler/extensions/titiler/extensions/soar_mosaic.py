@@ -11,14 +11,14 @@ from typing_extensions import Annotated, TypedDict
 
 from fastapi import Depends, Query, Body, Depends, Query
 from titiler.extensions.soar_util import *
-from titiler.extensions.soar_models import StacAsset, StacCatalogMetadata, StacItem
+from titiler.extensions.soar_models import StacAsset, StacCatalogMetadata, StacItem, MosaicJSONMetadata
 from titiler.core.factory import BaseTilerFactory, FactoryExtension
 
 from cogeo_mosaic.mosaic import MosaicJSON
 from cogeo_mosaic.utils import get_dataset_info
 from pystac import Collection, Item, Catalog, Link
 from pystac.utils import datetime_to_str
-
+from cogeo_mosaic.models import Info as InfoMosaic
 
 logger = logging.getLogger('uvicorn.error')
 
@@ -29,6 +29,10 @@ class CreateBody(TypedDict):
 class GenerateTilesBody(TypedDict):
     """POST Body for /create endpoint."""
     tiles: List[tuple[int, int, int]]
+
+class MosaicJSONMetadataResponse(TypedDict):
+    messages: List[str]
+    data: Optional[MosaicJSONMetadata]
 
 @dataclass
 class soarMosaicExtension(FactoryExtension):
@@ -265,6 +269,52 @@ class soarMosaicExtension(FactoryExtension):
                     tiles = bbox_to_tiles(mosaic.bounds, zoom)
                     generate_tiles(tiles, cache_key, src_path)
                     return F"Total of {len(tiles)} tiles were send to CF cache."
+        
+        @factory.router.get(
+            "/soar/metadata",
+            response_model=MosaicJSONMetadataResponse,
+            responses={200: {"description": "Return MosaicJSON Metadata"}},
+        )
+        def metadata(
+            src_path=Depends(factory.path_dependency),
+            backend_params=Depends(factory.backend_dependency),
+            reader_params=Depends(factory.reader_dependency),
+            env=Depends(factory.environment_dependency),
+            metadata_path: Annotated[Optional[str], Query(description="Destination path to save the Soar metadata file.")] = None,
+            return_data: Annotated[bool, Query(description="Return metadata as response too")] = False,
+        ):
+            """Read a MosaicJSON metadata"""
+            src_path_encoded = encode_url_path_segments(src_path)
+            with rasterio.Env(**env):
+                with factory.reader(
+                    src_path_encoded,
+                    reader=factory.dataset_reader,
+                    reader_options={**reader_params},
+                    **backend_params,
+                ) as src_dst:
+                    info : InfoMosaic = src_dst.info()
+                    bounds = info.bounds
+                    bounds_wkt = F"POLYGON(({bounds[0]} {bounds[1]}, {bounds[2]} {bounds[1]}, {bounds[2]} {bounds[3]}, {bounds[0]} {bounds[3]}, {bounds[0]} {bounds[1]}))"
+                    tile_url = F"https://{APP_HOSTNAME}/mosaicjson/tiles/WebMercatorQuad/{{z}}/{{x}}/{{y}}.png?url={encode_url_path_segments(src_path_encoded)}"
+                    metadata:  MosaicJSONMetadata = {
+                        "max_zoom": info.maxzoom,
+                        "min_zoom": info.minzoom,
+                        "bounds_wkt": bounds_wkt,
+                        "tile_url": tile_url,
+                        "tilematrixset": info.tilematrixset,
+                        "center": info.center
+                    }
+                    messages = []
+                    if(metadata_path is not None):
+                        output_file_metadata = f"{metadata_path.strip('/')}/cog_metadata.json"
+                        messages.append(save_or_post_data(metadata_path, output_file_metadata, to_json(metadata)))
+
+                    response : MosaicJSONMetadataResponse = {"messages": messages}
+                    if(return_data):
+                        response["data"] = metadata
+                    else:
+                        response["data"] = None
+                    return response
 
 def generate_tiles(tiles, cache_key, src_path):
     total = len(tiles)
@@ -273,7 +323,7 @@ def generate_tiles(tiles, cache_key, src_path):
         z, x, y = tile
         start_time = time.time()  # Record the start time
         if(skip_cache_check == True or exists_in_cache(cache_key, z, x, y) == False):
-            fetch_tile_and_forward_to_cf(cache_key, src_path, z, x, y)
+            fetch_tile_and_forward_to_cf_mosaic(cache_key, src_path, z, x, y)
             skip_cache_check = True
         end_time = time.time()  # Record the end time
         elapsed_time = end_time - start_time  # Calculate elapsed time

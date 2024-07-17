@@ -273,7 +273,7 @@ class soarMosaicExtension(FactoryExtension):
         @factory.router.get(
             "/soar/metadata",
             response_model=MosaicJSONMetadataResponse,
-            responses={200: {"description": "Return created COG Metadata file"}},
+            responses={200: {"description": "Return MosaicJSON Metadata"}},
         )
         def metadata(
             src_path=Depends(factory.path_dependency),
@@ -283,7 +283,7 @@ class soarMosaicExtension(FactoryExtension):
             metadata_path: Annotated[Optional[str], Query(description="Destination path to save the Soar metadata file.")] = None,
             return_data: Annotated[bool, Query(description="Return metadata as response too")] = False,
         ):
-            """Read a COG info"""
+            """Read a MosaicJSON metadata"""
             src_path_encoded = encode_url_path_segments(src_path)
             with rasterio.Env(**env):
                 with factory.reader(

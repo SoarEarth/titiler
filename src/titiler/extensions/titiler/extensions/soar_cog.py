@@ -97,7 +97,8 @@ class soarCogExtension(FactoryExtension):
             return_data: Annotated[bool, Query(description="Return metadata as response too")] = False,
         ):
             """Create preview and save into dest_path"""
-            content = fetch_preview(src_path, image_params)
+            src_path_encoded = encode_url_path_segments(src_path)
+            content = fetch_preview(src_path_encoded, image_params)
             if(preview_path is not None):
                 output_file = f"{preview_path.strip('/')}/preview_s{image_params.max_size}.png"
                 save_or_post_bytes(preview_path, output_file, content)

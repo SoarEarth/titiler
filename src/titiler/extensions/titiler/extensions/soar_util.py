@@ -12,7 +12,6 @@ import logging
 import requests
 import json
 from urllib.parse import urlparse, urlencode, quote, urlunparse, parse_qsl
-import tempfile
 
 logger = logging.getLogger('uvicorn.error')
 
@@ -95,10 +94,17 @@ def save_or_post_data(dest_path: str, file_path: str, content: str) -> str:
             msg = F"File sent:  {dest_path}"
         else:
             logger.info(F"Saving file: {file_path}")
+            file_path_temp = F"{APP_DEST_PATH}/tmp/{file_path}"
+            file_temp = Path(file_path_temp)
+            file_temp.parent.mkdir(exist_ok=True, parents=True)
+            file_temp.write_text(content)
+
             file = Path(F"{APP_DEST_PATH}/{file_path}")
             file.parent.mkdir(exist_ok=True, parents=True)
-            file.write_text(content)
+            # Atomically move the temp file to the target file
+            shutil.move(file_temp, file)
             msg = F"File saved:  {file.absolute()}"
+
     logger.info(msg)
     return msg
 
@@ -191,25 +197,20 @@ def save_or_post_bytes(dest_path: str, file_path: str, content: bytes) -> str:
             msg = F"File sent:  {dest_path}"
         else:
             logger.info(F"Saving file: {file_path}")
-            temp_dir = tempfile.mkdtemp()
-            temp_file_path = os.path.join(temp_dir, os.path.basename(file_path))
+            file_path_temp = F"{APP_DEST_PATH}/tmp/{file_path}"
+            file_temp = Path(file_path_temp)
+            file_temp.parent.mkdir(exist_ok=True, parents=True)
+            file_temp.write_bytes(content)
 
-            # Write to a temporary file
-            with open(temp_file_path, 'w') as temp_file:
-                temp_file.write("Your file content here")  # Replace with actual content
-
-            # Ensure the destination directory exists
-            dest_file = Path(F"{APP_DEST_PATH}/{file_path}")
-            dest_file.parent.mkdir(exist_ok=True, parents=True)
-
-            # Move the temporary file to the destination
-            os.replace(temp_file_path, dest_file)
-
-            # file = Path(F"{APP_DEST_PATH}/{file_path}")
-            # file.parent.mkdir(exist_ok=True, parents=True)
-            msg = F"File saved"
+            file = Path(F"{APP_DEST_PATH}/{file_path}")
+            file.parent.mkdir(exist_ok=True, parents=True)
+            # Atomically move the temp file to the target file
+            shutil.move(file_temp, file)
+            msg = F"File saved:  {file.absolute()}"
     logger.info(msg)
     return msg
+
+
 
 def to_json(obj):
     return json.dumps(

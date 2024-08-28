@@ -19,6 +19,7 @@ from cogeo_mosaic.utils import get_dataset_info
 from pystac import Collection, Item, Catalog, Link
 from pystac.utils import datetime_to_str
 from cogeo_mosaic.models import Info as InfoMosaic
+from datetime import datetime, timezone
 
 logger = logging.getLogger('uvicorn.error')
 
@@ -201,7 +202,9 @@ class soarMosaicExtension(FactoryExtension):
                     metadata["mosaic_layer_url"] = F"https://{APP_HOSTNAME}/mosaicjson/tiles/WebMercatorQuad/{{z}}/{{x}}/{{y}}.png?url={mosaic_path}"
 
             if(metadata_path is not None):
-                output_file_metadata = f"{metadata_path.strip('/')}/{collection.id.lower()}.json"
+                formatted_datetime = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
+
+                output_file_metadata = f"{metadata_path.strip('/')}/{collection.id.lower()}_{formatted_datetime}.json"
                 messages.append(save_or_post_data(metadata_path, output_file_metadata, json.dumps(metadata)))
 
             response = {"messages": messages}

@@ -43,7 +43,7 @@ class soarCogExtension(FactoryExtension):
 
         @factory.router.get(
             "/soar/metadata",
-            response_model=COGMetadataResponse,
+            # response_model=COGMetadataResponse,
             responses={200: {"description": "Return created COG Metadata file"}},
         )
         def metadata(
@@ -54,36 +54,52 @@ class soarCogExtension(FactoryExtension):
             return_data: Annotated[bool, Query(description="Return metadata as response too")] = False,
                 ):
             """Read a COG info"""
-            src_path_encoded = encode_url_path_segments(src_path)
-            info_cogeo = cog_info(src_path_encoded)
-            with rasterio.Env(**env):
-                with factory.reader(src_path_encoded, **reader_params) as src_dst:
-                    info = src_dst.info()
-                    bounds = info.bounds
-                    bounds_wkt = f"POLYGON(({bounds.left} {bounds.bottom}, {bounds.left} {bounds.top}, {bounds.right} {bounds.top}, {bounds.right} {bounds.bottom}, {bounds.left} {bounds.bottom}))"
-                    tile_url =  F"https://{APP_HOSTNAME}/cog/tiles/WebMercatorQuad/{{z}}/{{x}}/{{y}}.png?url={encode_url_path_segments(src_path_encoded)}"
-                    metadata:  COGMetadata = {
-                        "info_cogeo": info_cogeo,
-                        "info_tiler": info,
-                        "is_valid": info_cogeo.COG,
-                        "max_zoom": info.maxzoom,
-                        "min_zoom": info.minzoom,
-                        "bounds_wkt": bounds_wkt,
-                        "tile_url": tile_url,
-                        "errors": info_cogeo.COG_errors,
-                        "warnings": info_cogeo.COG_warnings
-                    }
-                    messages = []
-                    if(metadata_path is not None):
-                        output_file_metadata = f"{metadata_path.strip('/')}/cog_metadata.json"
-                        messages.append(save_or_post_data(metadata_path, output_file_metadata, to_json(metadata)))
+            try:
+                src_path_encoded = encode_url_path_segments(src_path)
+                info_cogeo = cog_info(src_path_encoded)
+                with rasterio.Env(**env):
+                    with factory.reader(src_path_encoded, **reader_params) as src_dst:
+                        info = src_dst.info()
+                        bounds = info.bounds
+                        bounds_wkt = f"POLYGON(({bounds.left} {bounds.bottom}, {bounds.left} {bounds.top}, {bounds.right} {bounds.top}, {bounds.right} {bounds.bottom}, {bounds.left} {bounds.bottom}))"
+                        tile_url =  F"https://{APP_HOSTNAME}/cog/tiles/WebMercatorQuad/{{z}}/{{x}}/{{y}}.png?url={encode_url_path_segments(src_path_encoded)}"
+                        metadata: COGMetadata = {
+                            "info_cogeo": info_cogeo,
+                            "info_tiler": info,
+                            "is_valid": info_cogeo.COG,
+                            "max_zoom": info.maxzoom,
+                            "min_zoom": info.minzoom,
+                            "bounds_wkt": bounds_wkt,
+                            "tile_url": tile_url,
+                            "errors": info_cogeo.COG_errors,
+                            "warnings": info_cogeo.COG_warnings
+                        }
+                        messages = []
+                        if(metadata_path is not None):
+                            output_file_metadata = f"{metadata_path.strip('/')}/cog_metadata.json"
+                            messages.append(save_or_post_data(metadata_path, output_file_metadata, to_json(metadata)))
 
-                    response : COGMetadataResponse = {"messages": messages}
-                    if(return_data):
-                        response["data"] = metadata
-                    else:
-                        response["data"] = None
-                    return response
+                        response : COGMetadataResponse = {"messages": messages}
+                        if(return_data):
+                            response["data"] = metadata
+                        else:
+                            response["data"] = None
+                        return response
+
+            except Exception as err:
+                error_message = f"Failed to read COG metadata. {str(err)}"
+                metadata : COGMetadata = {
+                    "is_valid": False,
+                    "errors": [error_message]
+                }
+                response : COGMetadataResponse = {"messages": [error_message]}
+                if(return_data):
+                    response["data"] = metadata
+                else:
+                    response["data"] = None
+                return response
+            
+
 
 
         @factory.router.get(

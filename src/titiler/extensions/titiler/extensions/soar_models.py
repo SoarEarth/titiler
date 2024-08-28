@@ -87,15 +87,15 @@ class StacCatalogMetadata(TypedDict):
 
 class COGMetadata(TypedDict):
     """COG metadata."""
-    info_tiler: Optional[InfoTiler]
-    info_cogeo: Optional[InfoCogeo]
+    info_tiler: Optional[InfoTiler] = None
+    info_cogeo: Optional[InfoCogeo] = None
     is_valid: bool
-    bounds_wkt: Optional[str]
-    min_zoom: Optional[int]
-    max_zoom: Optional[int]
-    tile_url: Optional[str]
-    errors: Optional[List[str]]
-    warnings: Optional[List[str]]
+    bounds_wkt: Optional[str] = None
+    min_zoom: Optional[int] = None
+    max_zoom: Optional[int] = None
+    tile_url: Optional[str] = None
+    errors: Optional[List[str]] = None
+    warnings: Optional[List[str]] = None
 
 class MosaicJSONMetadata(TypedDict):
     """MosaicJSON metadata."""

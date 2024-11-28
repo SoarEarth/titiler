@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 from typing import List, Optional, Type
-from titiler.extensions.soar_util import APP_HOSTNAME, bbox_to_tiles, exists_in_cache, fetch_tile_and_forward_to_cf_cog, save_or_post_data, to_json, fetch_preview, save_or_post_bytes, encode_url_path_segments
+from titiler.extensions.soar_util import APP_HOSTNAME, APP_DEST_PATH, bbox_to_tiles, exists_in_cache, fetch_tile_and_forward_to_cf_cog, save_or_post_data, to_json, fetch_preview, save_or_post_bytes, encode_url_path_segments
 from typing_extensions import TypedDict
 import rasterio
 import logging
@@ -14,11 +14,17 @@ from typing_extensions import Annotated
 
 from titiler.core.factory import BaseTilerFactory, FactoryExtension
 from titiler.core.dependencies import DefaultDependency, PreviewParams
+import os
+import morecantile
 
 try:
-    from rio_cogeo.cogeo import cog_info
+    from rio_cogeo.cogeo import cog_info, cog_translate
+    from rio_cogeo.profiles import cog_profiles
+
 except ImportError:  # pragma: nocover
     cog_info = None  # type: ignore
+    cog_translate = None  # type: ignore
+    cog_profiles = None  # type: ignore
 
 logger = logging.getLogger('uvicorn.error')
 
@@ -140,6 +146,29 @@ class soarCogExtension(FactoryExtension):
                     tiles = bbox_to_tiles(info.bounds, zoom)
                     generate_tiles(tiles, cache_key, src_path)
                     return F"Total of {len(tiles)} tiles were send to CF cache."
+
+        @factory.router.get(
+            "/soar/cog_translate",
+            responses={200: {"description": "Return message"}},
+        )
+        def translate(
+            src_path: Annotated[Optional[str], Query(description="Source of the main file to translate")] = None,
+            dest_path: Annotated[Optional[str], Query(description="Destination path to save the COG file.")] = None,
+        ):
+            """Create COG and save into dest_path"""
+            cog_profile = cog_profiles.get("zstd")
+            src_file = F"{APP_DEST_PATH}/{src_path}"
+            dest_file = F"{APP_DEST_PATH}/{dest_path}"
+            tms = morecantile.tms.get("WebMercatorQuad")
+            # Convert to COG with the selected profile
+            cog_translate(
+                src_file,
+                dest_file,
+                cog_profile,
+                use_cog_driver=True,
+                tms=tms
+            )
+            return Response('ok', media_type="text")
 
 
 def generate_tiles(tiles, cache_key, src_path):

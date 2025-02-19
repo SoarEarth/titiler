@@ -154,9 +154,10 @@ class soarCogExtension(FactoryExtension):
         def translate(
             src_path: Annotated[Optional[str], Query(description="Source of the main file to translate")] = None,
             dest_path: Annotated[Optional[str], Query(description="Destination path to save the COG file.")] = None,
+            cog_profile: Annotated[Optional[str], Query(description="COG profile to use.")] = "zstd",
         ):
             """Create COG and save into dest_path"""
-            cog_profile = cog_profiles.get("zstd")
+            cog_profile = cog_profiles.get(cog_profile)
             src_file = F"{APP_DEST_PATH}/{src_path}"
             dest_file = F"{APP_DEST_PATH}/{dest_path}"
             tms = morecantile.tms.get("WebMercatorQuad")

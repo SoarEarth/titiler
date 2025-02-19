@@ -57,7 +57,13 @@ def create_stac_extent(ext: Extent) -> StacExtent:
     # map datetime into ISO format
     mapped_intervals : list[list[str]] = []
     for interval in ext.temporal.intervals:
-        mapped_intervals.append([datetime_to_str(interval[0]), datetime_to_str(interval[1])])
+        mapped_interval = []
+        if interval[0] is not None:
+            mapped_interval.append(datetime_to_str(interval[0]))
+        if interval[1] is not None:
+            mapped_interval.append(datetime_to_str(interval[1]))
+        if len(mapped_interval) > 0:
+            mapped_intervals.append(mapped_interval)
     return {
         "spatial": ext.spatial.bboxes,
         "temporal": mapped_intervals,

@@ -138,12 +138,18 @@ class soarCogExtension(FactoryExtension):
             src_path=Depends(factory.path_dependency),
             reader_params=Depends(factory.reader_dependency),
             env=Depends(factory.environment_dependency),
+            offset: Annotated[int, Query(description="Offset")] = -1,
+            limit: Annotated[int, Query(description="Limit")] = -1,
         ):
             """Read a COG and pre-tile requested zoom level"""
             with rasterio.Env(**env):
                 with factory.reader(src_path, **reader_params) as src_dst:
                     info = src_dst.info()
                     tiles = bbox_to_tiles(info.bounds, zoom)
+                    if(offset > 0):
+                        tiles = tiles[offset:]
+                    if(limit > 0):
+                        tiles = tiles[:limit]
                     generate_tiles(tiles, cache_key, src_path)
                     return F"Total of {len(tiles)} tiles were send to CF cache."
 

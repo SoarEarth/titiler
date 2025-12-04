@@ -1,4 +1,4 @@
-version: '3'
+version: "3"
 
 services:
   titiler:
@@ -19,6 +19,8 @@ services:
       - WEB_CONCURRENCY=1
       # https://github.com/tiangolo/uvicorn-gunicorn-docker#workers_per_core
       - WORKERS_PER_CORE=1
+      - TIMEOUT=3600
+      - GRACEFUL_TIMEOUT=3600
       # GDAL config
       - CPL_TMPDIR=/tmp
       - GDAL_CACHEMAX=75%

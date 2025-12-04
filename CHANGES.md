@@ -1,5 +1,555 @@
 # Release Notes
 
+## 0.26.0 (2025-11-25)
+
+### titiler.xarray
+
+* use `sel={dim}={method}::{value}` notation  to specify selector method instead of `sel-method` query-parameter **breaking change** 
+
+    ```python
+    # before
+    .../info?tore.zarr?sel=time=2023-01-01&sel_method=nearest`
+
+    # now
+    .../info?tore.zarr?sel=time=nearest::2023-01-01`
+    ```
+
+* add `/validate` endpoint via `ValidateExtension` extension
+* add `Latitude` and `Longitude` as compatible spatial dimensions (@abarciauskas-bgse, https://github.com/developmentseed/titiler/pull/1268)
+
+### titiler.mosaic
+
+* remove usage of `mosaic_def.center` and calculate from bounds
+
+## 0.25.0 (2025-11-07)
+
+### Misc 
+
+* remove `/bounds` endpoints **breaking change**
+* update docker image to python:3.13
+* switch to `uv` for development
+* switch to `hatch` for python package build-system
+* remove `titiler` metapackage **breaking change**
+* bump minimum python version to 3.11
+
+### titiler.xarray
+
+* add `opener_options` arg to `titiler.xarray.io.Reader` to allow users to pass args through to a custom opener function ([#1248(https://github.com/developmentseed/titiler/pull/1248)])
+* add `obstore` and `zarr-python` as dependency and add `open_zarr` dataset opener
+* default to `titiler.xarray.io.open_zarr` for `titiler.xarray.io.Reader.dataset_opener` attribute
+* rename `titiler.xarray.io.xarray_open_dataset` to `fs_open_dataset`
+* add `FsReader` which use `fs_open_dataset` as `dataset_opener`
+* create offical application `titiler.xarray.main:app`
+
+### titiler.mosaic
+
+* move `/` and `/validate`  to a `MosaicJSONExtension`
+
+## 0.24.2 (2025-10-16)
+
+### titiler.core
+
+* update `TileJSON` spec from 2.2.0 to 3.0.0
+* fix OpenAPI spec for `histogram_range` examples (@guillemc23, https://github.com/developmentseed/titiler/pull/1239)
+
+## 0.24.1 (2025-10-10)
+
+* add `grayscale` and `bitonal` algorithms
+* add `transform` and `crs` for `tiff` outputs
+
+
+## 0.24.0 (2025-09-23)
+
+### Misc
+
+* add attribution in `/tilejson.json` response. Controled with `TITILER_DEFAULT_ATTRIBUTION` environment variable.
+* enable `jinja2.autoescape` for HTML/XML templates (ref: https://jinja.palletsprojects.com/en/stable/api/#autoescaping)
+* remove python 3.9 support
+
+### titiler.extension 
+
+* update rio-stac requirement
+
+### titiler.application
+
+* add `description` in `ApiSettings`
+
+### titiler.core
+
+* delete `titiler.core.templating` submodule **breaking change**
+* move `create_html_response` function to `titiler.core.utils` submodule
+* move all HTML templates in `titiler/core/templates` directory  **breaking change**
+* add HTML responses for tilesets, tilematrixsets, algorithms and colormaps endpoints
+* rename response model `ColorMapsList` -> `ColorMapList` and change it's attibutes to `colormaps` **breaking change**
+* add `templates` in the `BaseFactory` class definition
+
+## 0.23.1 (2025-08-27)
+
+### titiler.core
+
+* add `sum` algorithm
+
+## 0.23.0 (2025-08-26)
+
+### titiler.core
+
+* add OpenTelemetry instrumentation to the tiler factory classes
+* add `OGC Maps API` support (`/map` endpoint)
+
+### titiler.application
+
+* add OpenTelemetry tracing to the FastAPI application
+* update `starlette-cramjam` requirement to `>=0.4,<0.6`
+
+### titiler.xarray
+
+* add `add_preview` in factory attribute (default to `False`)
+
+### Misc
+
+* Add otel-collector and jaeger to the docker network
+* fix layer's bounds for non-wgs84 CRS in WMTS document
+* switch from bitnami to official python:3.12 docker image
+
+## 0.22.4 (2025-07-02)
+
+* fix `rel` values for tiling scheme link (OGC Tiles specification)
+
+## 0.22.3 (2025-06-17)
+
+### titiler.xarray
+
+* use dimension's `dtype` to cast user *selection*
+
+## 0.22.2 (2025-06-02)
+
+### titiler.application
+
+* remove unused templates
+
+### titiler.xarray
+
+* fix `xarray_open_dataset` for cloud hosted files
+
+## 0.22.1 (2025-05-13)
+
+### titiler.xarray
+
+* update `reader` and `path_dependency` type informations
+
+## 0.22.0 (2025-05-06)
+
+### Misc
+
+* rename `/map` endpoint to `/map.html` **breaking change**
+* add `name` attribute to `BaseFactory` to define endpoint's `operationId`
+* add `operationId` on all endpoints
+* add `/preview/{width}x{height}.{format}` endpoints
+* update rio-tiler requirement to `>=7.7,<8.0`
+* allow users to pass only one of `width` or `heigh` size parameters for `preview`, `part` and `feature` requests
+* use `minZoom` instead of `minNativeZoom` in the `/map.html` html template
+* update geojson-pydantic requirement to `>=1.1.2,<3.0` and change featureCollection iteration
+
+### titiler.application
+
+* fix Landing page links when app is behind proxy
+* use `titiler.core` templates for Landing page
+* enable JSON and HTML rendering of the `/` landing page
+* add OGC Common `/conformance` endpoint
+
+### titiler.core
+
+* add `conforms_to` attribute to `BaseFactory` to indicate which conformance the TileFactory implement
+
+* remove deprecated `ColorFormulaParams` and `RescalingParams` dependencies **breaking change**
+
+* remove deprecated `DefaultDependency` dict-unpacking feature **breaking change**
+
+* add `min`, `max`, `mean`, `median`, `std` and `var` algorithms
+
+* Fix TerrainRGB algorithm and param user-controlled nodata-height (@jo-chemla, https://github.com/developmentseed/titiler/pull/1116)
+
+* add `output_min` and `output_max` metadata attributes to `slope` algorithm (@tayden, https://github.com/developmentseed/titiler/pull/1089)
+
+* add point value query on right-click to map viewer (@hrodmn, https://github.com/developmentseed/titiler/pull/1100)
+
+* refactor middlewares to use python's dataclasses
+
+* update `LoggerMiddleware` output format and options **breaking change**
+
+    ```python
+    from fastapi import FastAPI
+
+    from titiler.core.middlewares import LoggerMiddleware
+
+    # before
+    app = FastAPI()
+    app.add_middlewares(LoggerMiddleware, querystrings=True, headers=True)
+
+    # now
+    app = FastAPI()
+    app.add_middlewares(
+        LoggerMiddleware,
+        # custom Logger
+        logger=logging.getLogger("mytiler.requests"),  # default to logging.getLogger("titiler.requests")
+    )
+    ```
+
+    Note: logger needs then to be `configured` at runtime. e.g :
+
+    ```python
+    from logging import config
+    config.dictConfig(
+        {
+            "version": 1,
+            "disable_existing_loggers": False,
+            "formatters": {
+                "detailed": {
+                    "format": "%(asctime)s - %(levelname)s - %(name)s - %(message)s"
+                },
+                "request": {
+                    "format": (
+                        "%(asctime)s - %(levelname)s - %(name)s - %(message)s "
+                        + json.dumps(
+                            {
+                                k: f"%({k})s"
+                                for k in [
+                                    "method",
+                                    "referer",
+                                    "origin",
+                                    "route",
+                                    "path",
+                                    "path_params",
+                                    "query_params",
+                                    "headers",
+                                ]
+                            }
+                        )
+                    ),
+                },
+            },
+            "handlers": {
+                "console_request": {
+                    "class": "logging.StreamHandler",
+                    "level": "DEBUG",
+                    "formatter": "request",
+                    "stream": "ext://sys.stdout",
+                },
+            },
+            "loggers": {
+                "mytiler.requests": {
+                    "level": "INFO",
+                    "handlers": ["console_request"],
+                    "propagate": False,
+                },
+            },
+        }
+    )
+    ```
+
+### titiler.extensions
+
+* update `wms` extension to remove usage of `ColorFormulaParams` and `RescalingParams` dependencies
+* update `render` extension to better validate query-parameters from render expression
+
+### titiler.xarray
+
+* update `rio-tiler` requirement to `>=7.6.1`
+* add `sel` and `sel_method` options to select dimension
+
+    ```
+    # before
+    https://.../0/0/0.png?url=dataset.zarr&drop_dim=time=2023-01-01
+
+    # now
+    https://.../0/0/0.png?url=dataset.zarr&sel=time=2023-01-01
+
+    # method
+    https://.../0/0/0.png?url=dataset.zarr&sel=time=2023-01-02&sel_method=nearest
+
+    # Can use `slice` when providing 2 values
+    https://.../0/0/0.png?url=dataset.zarr&sel=time=2023-01-01&time=2023-01-31
+    ```
+* add support for `bidx` parameter
+* remove `first` **time** dim selection **breaking change**
+* add support for 3D dataset
+* remove `drop_dim` option **breaking change**
+* remove `datetime` option **breaking change**
+* deprecate `VariablesExtension` extension
+* add `DatasetMetadataExtension` extension (`/dataset/keys`, `/dataset/` and `/dataset/dict` endpoints)
+
+### titiler.mosaic
+
+* add `/bbox` prefix to `/{minx},{miny},{maxx},{maxy}/assets` endpoint -> `/bbox/{minx},{miny},{maxx},{maxy}/assets` **breaking change**
+* add `/point` prefix to `{lon},{lat}/assets` endpoint -> `/point/{lon},{lat}/assets` **breaking change**
+* add `/tiles` prefix to `/{tileMatrixSetId}/{z}/{x}/{y}/assets` endpoint -> `/tiles/{tileMatrixSetId}/{z}/{x}/{y}/assets` **breaking change**
+* add `assets_accessor_dependency` dependency to the MosaicTileFactory to pass options to the backend's `get_assets` method.
+
+## 0.21.1 (2025-01-29)
+
+### titiler.core
+
+* add `slope` algorithm (@tayden, https://github.com/developmentseed/titiler/pull/1088)
+
+### titiler.xarray
+
+* Support Zarr-Python >=3 (author @maxrjones, https://github.com/developmentseed/titiler/pull/1082)
+
+## 0.21.0 (2025-01-24)
+
+### Misc
+
+* use `URN` style CRS notation in WMTS document
+
+* Unify Docker images (deprecate `titiler-uvicorn`)
+
+    ```
+    # Uvicorn
+    # before
+    docker run \
+        --platform=linux/amd64 \
+        -p 8000:8000 \
+        --env PORT=8000 \
+        --rm -it ghcr.io/developmentseed/titiler-uvicorn:latest
+
+    # now
+    docker run \
+        --platform=linux/amd64 \
+        -p 8000:8000 \
+        --rm -it ghcr.io/developmentseed/titiler:latest \
+        uvicorn titiler.application.main:app --host 0.0.0.0 --port 8000 --workers 1
+
+    # Gunicorn
+    # before
+    docker run \
+        --platform=linux/amd64 \
+        -p 8000:8000 \
+        --env PORT=8000 \
+        --rm -it ghcr.io/developmentseed/titiler:latest
+
+    # now
+    docker run \
+        --platform=linux/amd64 \
+        -p 8000:8000 \
+        --rm -it ghcr.io/developmentseed/titiler:latest \
+        gunicorn -k uvicorn.workers.UvicornWorker titiler.application.main:app --bind 0.0.0.0:8000 --workers 1
+    ```
+
+## 0.20.1 (2025-01-09)
+
+### titiler.xarray
+
+* pin python `zarr` to `>2,<3.0` to avoid zarr 3.0 breaking changes
+
+## 0.20.0 (2025-01-07)
+
+### titiler.core
+
+* add layer control to map viewer template (author @hrodmn, https://github.com/developmentseed/titiler/pull/1051)
+* improve query string handling in LowerCaseQueryStringMiddleware using urlencode (author @pratapvardhan, https://github.com/developmentseed/titiler/pull/1050)
+* add `titiler.core.utils.bounds_to_geometry` and reduce code duplication in factories (author @PratapVardhan, https://github.com/developmentseed/titiler/pull/1047)
+* simplify image format dtype validation in `render_image` (author @PratapVardhan, https://github.com/developmentseed/titiler/pull/1046)
+* remove `rescale_dependency` and `color_formula_dependency` attributes in `TilerFactory` class  **breaking change**
+* move `rescale` and `color_formula` QueryParameters dependencies in `ImageRenderingParams` class  **breaking change**
+* handle image rescaling and color_formula within `titiler.core.utils.render_image` function  **breaking change**
+* add `render_func: Callable[..., Tuple[bytes, str]] = render_image` attribute in `TilerFactory` class
+* add `castToInt`, `Floor`, `Ceil` algorithms
+
+### titiler.application
+
+* update `/healthz` endpoint to return dependencies versions (titiler, rasterio, gdal, ...) (author @scottyhq, https://github.com/developmentseed/titiler/pull/1056)
+* migrate `templates/index.html` to bootstrap5, remove unused css, reuse bs classes (author @PratapVardhan, https://github.com/developmentseed/titiler/pull/1048)
+
+### titiler.mosaic
+
+* remove `rescale_dependency` and `color_formula_dependency` attributes in `MosaicTilerFactory` class  **breaking change**
+* add `render_func: Callable[..., Tuple[bytes, str]] = render_image` attribute in `MosaicTilerFactory` class  **breaking change**
+
+### titiler.extensions
+
+* use `factory.render_func` as render function in `wmsExtension` endpoints
+* add `stacRenderExtension` which adds two endpoints: `/renders` (lists all renders) and `/renders/<render_id>` (render metadata and links) (author @alekzvik, https://github.com/developmentseed/titiler/pull/1038)
+
+### Misc
+
+* Updated WMTS Capabilities template to avoid inserting extra new lines (author @AndrewAnnex, https://github.com/developmentseed/titiler/pull/1052).
+* Updated WMTS endpoint in titiler.mosaic and titiler.core to return layer bounds in coordinate ordering matching CRS order if WGS84 is not used (author @AndrewAnnex, https://github.com/developmentseed/titiler/pull/1052).
+* Remove `python3.8` support (author @pratapvardhan, https://github.com/developmentseed/titiler/pull/1058)
+* Add `python3.13` support (author @pratapvardhan, https://github.com/developmentseed/titiler/pull/1058)
+
+## 0.19.3 (2025-01-09)
+
+### titiler.xarray
+
+* pin python zarr to >2,<3.0 to avoid zarr 3.0 breaking changes [Backported from 0.20.1]
+
+
+## 0.19.2 (2024-11-28)
+
+### Misc
+
+* drop python 3.8 and add python 3.13 support (author @pratapvardhan, https://github.com/developmentseed/titiler/pull/1058)
+
+* Update package build backend from `pdm-pep517` to `pdm-backend` (https://backend.pdm-project.org/#migrate-from-pdm-pep517)
+
+* Update namespace package from using `.` to `-` as separator to comply with PEP-625 (https://peps.python.org/pep-0625/)
+
+### titiler.mosaic
+
+* Define variable (`MOSAIC_CONCURRENCY` and `MOSAIC_STRICT_ZOOM`) from env-variable outside endpoint code
+
+## 0.19.1 (2024-11-14)
+
+* Add `titiler` links in Map attributions
+
+## 0.19.0 (2024-11-07)
+
+### Misc
+
+* Remove default `WebMercatorQuad` tile matrix set in `/tiles`, `/tilesjson.json`, `/map` and `/WMTSCapabilities.xml` endpoints **breaking change**
+
+    ```
+    # Before
+    /tiles/{z}/{x}/{y}
+    /tilejson.json
+    /map
+    /WMTSCapabilities.xml
+
+    # Now
+    /tiles/WebMercatorQuad/{z}/{x}/{y}
+    /WebMercatorQuad/tilejson.json
+    /WebMercatorQuad/map
+    /WebMercatorQuad/WMTSCapabilities.xml
+    ```
+
+* Use `@attrs.define` instead of dataclass for factories **breaking change**
+* Use `@attrs.define` instead of dataclass for factory extensions **breaking change**
+* Handle `numpy` types in JSON/GeoJSON response
+* In the `map.html` template, use the tilejson's `minzoom` and `maxzoom` to populate `minNativeZoom` and `maxNativeZoom` parameters in leaflet `tileLayer` instead of `minZoom` and `maxZoom`
+
+### titiler.core
+
+* Update `rio-tiler` dependency to `>=7.0,<8.0`
+
+* Update `geojson-pydantic` dependency to `>=1.1.2,<2.0` which better handle antimeridian crossing dataset
+
+* handle `antimeridian` crossing bounds in `/info.geojson` endpoints (returning MultiPolygon instead of Polygon)
+
+* Improve XSS security for HTML templates (author @jcary741, https://github.com/developmentseed/titiler/pull/953)
+
+* Remove all default values to the dependencies **breaking change**
+
+    * `DatasetParams.unscale`: `False` -> `None` (default to `False` in rio-tiler)
+    * `DatasetParams.resampling_method`: `nearest` -> `None` (default to `nearest` in rio-tiler)
+    * `DatasetParams.reproject_method`: `nearest` -> `None` (default to `nearest` in rio-tiler)
+    * `ImageRenderingParams.add_mask`: `True` -> `None` (default to `True` in rio-tiler)
+    * `StatisticsParams.categorical`: `False` -> `None` (default to `False` in rio-tiler)
+
+* Add `as_dict(exclude_none=True/False)` method to the `DefaultDependency` class.
+
+    ```python
+    from typing import Optional
+    from titiler.core.dependencies import DefaultDependency
+    from dataclasses import dataclass
+
+    @dataclass
+    class Deps(DefaultDependency):
+        value: Optional[int] = None
+
+    print({**Deps().__dict__.items()})
+    >> {'value': None}
+
+    Deps().as_dict()  # `exclude_none` defaults to True
+    >> {}
+
+    Deps(value=1).as_dict()
+    >> {'value': 1}
+    ```
+
+* Fix Hillshade algorithm (bad `azimuth` angle)
+
+* Set default `azimuth` and `altitude` angles to 45º for the Hillshade algorithm **breaking change**
+
+* Use `.as_dict()` method when passing option to rio-tiler Reader's methods to avoid parameter conflicts when using custom Readers.
+
+* Rename `BaseTilerFactory` to `BaseFactory` **breaking change**
+
+* Remove useless attribute in `BaseFactory` (and moved them to `TilerFactory`) **breaking change**
+
+* Add `crs` option to `/bounds` endpoints to enable geographic_crs selection by the user
+
+* `/bounds` endpoints now return a `crs: str` attribute in the response
+
+* update `wmts.xml` template to support multiple layers
+
+* re-order endpoints parameters
+
+* avoid `lat/lon` overflow in `map` viewer
+
+* add OGC Tiles `/tiles` and `/tiles/{tileMatrixSet}` endpoints
+
+* add `gif` media type
+
+* `/point` endpoint returned masked values (`None` is nodata)
+
+### titiler.mosaic
+
+* Rename `reader` attribute to `backend` in `MosaicTilerFactory`  **breaking change**
+
+* Add `crs` option to `/bounds` endpoints to enable geographic_crs selection by the user
+
+* `/bounds` endpoints now return a `crs: str` attribute in the response
+
+* Update `cogeo-mosaic` dependency to `>=8.0,<9.0`
+
+* re-order endpoints parameters
+
+* add OGC Tiles `/tiles` and `/tiles/{tileMatrixSet}` endpoints
+
+* `/point` endpoint returned masked values (`None` is nodata)
+
+### titiler.extensions
+
+* Encode URL for cog_viewer and stac_viewer (author @guillemc23, https://github.com/developmentseed/titiler/pull/961)
+
+* Add links for render parameters and `/map` link to **viewer** dashboard (author @hrodmn, https://github.com/developmentseed/titiler/pull/987)
+
+* Update viewers to use `/info.geojson` endpoint instead of `/info`
+
+## 0.18.10 (2024-10-17)
+
+### titiler.application
+
+* update `starlette-cramjam` dependency and set compression-level default to `6`
+
+## 0.18.9 (2024-09-23)
+
+* fix release 0.18.8
+
+## 0.18.8 (2024-09-23)
+
+### titiler.extensions
+
+* Add links for render parameters and /map link to viewer dashboard (author @hrodmn, https://github.com/developmentseed/titiler/pull/987)
+
+## 0.18.7 (2024-09-19)
+
+* fix Hillshade algorithm (bad `azimuth` angle) (https://github.com/developmentseed/titiler/pull/985) [Backported]
+* Encode URL for cog_viewer and stac_viewer (author @guillemc23, https://github.com/developmentseed/titiler/pull/961) [Backported]
+* Improve XSS security for HTML templates (author @jcary741, https://github.com/developmentseed/titiler/pull/953) [Backported]
+
+## 0.18.6 (2024-08-27)
+
+* Switch back to `fastapi` instead of `fastapi-slim` and use `>=0.109.0` version
+
+## 0.18.5 (2024-07-03)
+
+* Set version requirement for FastAPI to `>=0.111.0`
+
+## 0.18.4 (2024-06-26)
+
+* fix Tiles URL encoding for WMTSCapabilities XML document
+
 ## 0.18.3 (2024-05-20)
 
 * fix `WMTSCapabilities.xml` response for ArcMap compatibility

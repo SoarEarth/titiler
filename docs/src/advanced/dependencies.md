@@ -5,10 +5,11 @@ In titiler `Factories`, we use the dependencies to define the inputs for each en
 
 Example:
 ```python
+from typing import Annotated
+
 from dataclasses import dataclass
 from fastapi import Depends, FastAPI, Query
 from titiler.core.dependencies import DefaultDependency
-from typing_extensions import Annotated
 from rio_tiler.io import Reader
 
 @dataclass
@@ -26,7 +27,7 @@ def preview(
     params: ImageParams = Depends(),
 ):
     with Reader(url) as cog:
-        img = cog.preview(**params)  # classes built with `DefaultDependency` can be unpacked
+        img = cog.preview(**params.as_dict())  # we use `DefaultDependency().as_dict()` to pass only non-None parameters
         # or
         img = cog.preview(max_size=params.max_size)
     ...
@@ -36,7 +37,9 @@ def preview(
 
     In the example above, we create a custom `ImageParams` dependency which will then be injected to the `preview` endpoint to add  **max_size**, **height** and **width** query string parameters.
 
-    Using `titiler.core.dependencies.DefaultDependency`, we can `unpack` the class as if it was a dictionary, which helps with customization.
+    Using `titiler.core.dependencies.DefaultDependency`, we can use `.as_dict(exclude_none=True/False)` method to `unpack` the object parameters. This can be useful if method or reader do not take the same parameters.
+
+## titiler.core
 
 #### AssetsParams
 
@@ -58,6 +61,7 @@ class AssetsParams(DefaultDependency):
         title="Asset names",
         description="Asset's names.",
         openapi_examples={
+            "user-provided": {"value": None},
             "one-asset": {
                 "description": "Return results for asset `data`.",
                 "value": ["data"],
@@ -97,6 +101,7 @@ class AssetsBidxParams(AssetsParams):
             description="Per asset band indexes",
             alias="asset_bidx",
             openapi_examples={
+                "user-provided": {"value": None},
                 "one-asset": {
                     "description": "Return indexes 1,2,3 of asset `data`.",
                     "value": ["data|1;2;3"],
@@ -115,6 +120,7 @@ class AssetsBidxParams(AssetsParams):
             title="Per asset band expression",
             description="Per asset band expression",
             openapi_examples={
+                "user-provided": {"value": None},
                 "one-asset": {
                     "description": "Return results for expression `b1*b2+b3` of asset `data`.",
                     "value": ["data|b1*b2+b3"],
@@ -169,6 +175,7 @@ class AssetsBidxExprParams(AssetsParams):
             title="Band Math expression",
             description="Band math expression between assets",
             openapi_examples={
+                "user-provided": {"value": None},
                 "simple": {
                     "description": "Return results of expression between assets.",
                     "value": "asset1_b1 + asset2_b1 / asset3_b1",
@@ -184,6 +191,7 @@ class AssetsBidxExprParams(AssetsParams):
             description="Per asset band indexes (coma separated indexes)",
             alias="asset_bidx",
             openapi_examples={
+                "user-provided": {"value": None},
                 "one-asset": {
                     "description": "Return indexes 1,2,3 of asset `data`.",
                     "value": ["data|1,2,3"],
@@ -270,6 +278,7 @@ class BandsParams(DefaultDependency):
         title="Band names",
         description="Band's names.",
         openapi_examples={
+            "user-provided": {"value": None},
             "one-band": {
                 "description": "Return results for band `B01`.",
                 "value": ["B01"],
@@ -350,7 +359,11 @@ class BidxParams(DefaultDependency):
             title="Band indexes",
             alias="bidx",
             description="Dataset band indexes",
-            openapi_examples={"one-band": {"value": [1]}, "multi-bands": {"value": [1, 2, 3]}},
+            openapi_examples={
+                "user-provided": {"value": None},
+                "one-band": {"value": [1]},
+                "multi-bands": {"value": [1, 2, 3]},
+            },
         ),
     ] = None
 ```
@@ -379,6 +392,7 @@ class ExpressionParams(DefaultDependency):
             title="Band Math expression",
             description="rio-tiler's band math expression",
             openapi_examples={
+                "user-provided": {"value": None},
                 "simple": {"description": "Simple band math.", "value": "b1/b2"},
                 "multi-bands": {
                     "description": "Semicolon (;) delimited expressions (band1: b1/b2, band2: b2+b3).",
@@ -408,32 +422,6 @@ class BidxExprParams(ExpressionParams, BidxParams):
     """Band Indexes and Expression parameters."""
 
     pass
-```
-
-</details>
-
-#### `ColorFormulaParams`
-
-Color Formula option (see https://github.com/vincentsarago/color-operations).
-
-| Name      | Type      | Required | Default
-| ------    | ----------|----------|--------------
-| **color_formula**  | Query (str)     | No       | None
-
-<details>
-
-```python
-def ColorFormulaParams(
-    color_formula: Annotated[
-        Optional[str],
-        Query(
-            title="Color Formula",
-            description="rio-color formula (info: https://github.com/mapbox/rio-color)",
-        ),
-    ] = None,
-) -> Optional[str]:
-    """ColorFormula Parameter."""
-    return color_formula
 ```
 
 </details>
@@ -547,29 +535,31 @@ class DatasetParams(DefaultDependency):
         bool,
         Query(
             title="Apply internal Scale/Offset",
-            description="Apply internal Scale/Offset. Defaults to `False`.",
+            description="Apply internal Scale/Offset. Defaults to `False` in rio-tiler.",
         ),
     ] = False
     resampling_method: Annotated[
-        RIOResampling,
+        Optional[RIOResampling],
         Query(
             alias="resampling",
-            description="RasterIO resampling algorithm. Defaults to `nearest`.",
+            description="RasterIO resampling algorithm. Defaults to `nearest` in rio-tiler.",
         ),
-    ] = "nearest"
+    ] = None
     reproject_method: Annotated[
-        WarpResampling,
+        Optional[WarpResampling],
         Query(
             alias="reproject",
-            description="WarpKernel resampling algorithm (only used when doing re-projection). Defaults to `nearest`.",
+            description="WarpKernel resampling algorithm (only used when doing re-projection). Defaults to `nearest` in rio-tiler.",
         ),
-    ] = "nearest"
+    ] = None
 
     def __post_init__(self):
         """Post Init."""
         if self.nodata is not None:
             self.nodata = numpy.nan if self.nodata == "nan" else float(self.nodata)
-        self.unscale = bool(self.unscale)
+
+        if self.unscale is not None:
+            self.unscale = bool(self.unscale)
 ```
 
 </details>
@@ -655,6 +645,7 @@ If bins is a sequence (comma `,` delimited values), it defines a monotonically i
 link: https://numpy.org/doc/stable/reference/generated/numpy.histogram.html
             """,
             openapi_examples={
+                "user-provided": {"value": None},
                 "simple": {
                     "description": "Defines the number of equal-width bins",
                     "value": 8,
@@ -707,9 +698,11 @@ link: https://numpy.org/doc/stable/reference/generated/numpy.histogram.html
 
 Control output image rendering options.
 
-| Name      | Type      | Required | Default
-| ------    | ----------|----------|--------------
-| **return_mask**  | Query (bool)     | No       | False
+| Name               | Type                               | Required | Default
+| ------             | ----------                         |----------|--------------
+| **rescale**        | Query (str, comma delimited Numer) | No       | None
+| **color_formula**  | Query (str)                        | No       | None
+| **return_mask**    | Query (bool)                       | No       | False
 
 <details>
 
@@ -718,13 +711,49 @@ Control output image rendering options.
 class ImageRenderingParams(DefaultDependency):
     """Image Rendering options."""
 
+    rescale: Annotated[
+        Optional[List[str]],
+        Query(
+            title="Min/Max data Rescaling",
+            description="comma (',') delimited Min,Max range. Can set multiple time for multiple bands.",
+            examples=["0,2000", "0,1000", "0,10000"],  # band 1  # band 2  # band 3
+        ),
+    ] = None
+
+    color_formula: Annotated[
+        Optional[str],
+        Query(
+            title="Color Formula",
+            description="rio-color formula (info: https://github.com/mapbox/rio-color)",
+        ),
+    ] = None
+
     add_mask: Annotated[
-        bool,
+        Optional[bool],
         Query(
             alias="return_mask",
             description="Add mask to the output data. Defaults to `True`",
         ),
-    ] = True
+    ] = None
+
+    def __post_init__(self):
+        """Post Init."""
+        if self.rescale:
+            rescale_array = []
+            for r in self.rescale:
+                parsed = tuple(
+                    map(
+                        float,
+                        r.replace(" ", "").replace("[", "").replace("]", "").split(","),
+                    )
+                )
+                assert (
+                    len(parsed) == 2
+                ), f"Invalid rescale values: {self.rescale}, should be of form ['min,max', 'min,max'] or [[min,max], [min, max]]"
+                rescale_array.append(parsed)
+
+            self.rescale: RescaleType = rescale_array  # Noqa
+
 ```
 
 </details>
@@ -743,16 +772,23 @@ Same as `PreviewParams` but without default `max_size`.
 
 ```python
 @dataclass
-class PartFeatureParams(DefaultDependency):
-    """Common parameters for bbox and feature."""
+class PreviewParams(DefaultDependency):
+    """Common Preview parameters."""
 
-    max_size: Annotated[Optional[int], "Maximum image size to read onto."] = None
-    height: Annotated[Optional[int], "Force output image height."] = None
-    width: Annotated[Optional[int], "Force output image width."] = None
+    # NOTE: sizes dependency can either be a Query or a Path Parameter
+    max_size: Annotated[int, Field(description="Maximum image size to read onto.")] = (
+        1024
+    )
+    height: Annotated[
+        Optional[int], Field(description="Force output image height.")
+    ] = None
+    width: Annotated[Optional[int], Field(description="Force output image width.")] = (
+        None
+    )
 
     def __post_init__(self):
         """Post Init."""
-        if self.width and self.height:
+        if self.width or self.height:
             self.max_size = None
 ```
 
@@ -813,36 +849,6 @@ class PreviewParams(DefaultDependency):
 
 </details>
 
-#### `RescalingParams`
-
-Set Min/Max values to rescale from, to 0 -> 255.
-
-| Name      | Type      | Required | Default
-| ------    | ----------|----------|--------------
-| **rescale**  | Query (str, comma delimited Numer)     | No       | None
-
-<details>
-
-```python
-def RescalingParams(
-    rescale: Annotated[
-        Optional[List[str]],
-        Query(
-            title="Min/Max data Rescaling",
-            description="comma (',') delimited Min,Max range. Can set multiple time for multiple bands.",
-            examples=["0,2000", "0,1000", "0,10000"],  # band 1  # band 2  # band 3
-        ),
-    ] = None,
-) -> Optional[RescaleType]:
-    """Min/Max data Rescaling"""
-    if rescale:
-        return [tuple(map(float, r.replace(" ", "").split(","))) for r in rescale]
-
-    return None
-```
-
-</details>
-
 #### StatisticsParams
 
 Define options for *rio-tiler*'s statistics method.
@@ -861,9 +867,9 @@ class StatisticsParams(DefaultDependency):
     """Statistics options."""
 
     categorical: Annotated[
-        bool,
-        Query(description="Return statistics for categorical dataset."),
-    ] = False
+        Optional[bool],
+        Query(description="Return statistics for categorical dataset. Defaults to `False` in rio-tiler"),
+    ] = None
     categories: Annotated[
         Optional[List[Union[float, int]]],
         Query(
@@ -893,7 +899,7 @@ class StatisticsParams(DefaultDependency):
 
 #### TileParams
 
-Defile `buffer` and `padding` to apply at tile creation.
+Define `buffer` and `padding` to apply at tile creation.
 
 | Name      | Type      | Required | Default
 | ------    | ----------|----------|--------------
@@ -968,3 +974,200 @@ def post_process(
 
 </details>
 
+## titiler.xarray
+
+
+#### XarrayIOParams
+
+Define Xarray's `open_args` to `xarray.open_dataset`.
+
+| Name             | Type        | Required | Default
+| ------           | ----------  |----------|--------------
+| **group**        | Query (str) | No       | None
+| **decode_times** | Query (bool)| No       | None
+
+<details>
+
+```python
+@dataclass
+class XarrayIOParams(DefaultDependency):
+    """Dataset IO Options."""
+
+    group: Annotated[
+        Optional[str],
+        Query(
+            description="Select a specific zarr group from a zarr hierarchy. Could be associated with a zoom level or dataset."
+        ),
+    ] = None
+
+    decode_times: Annotated[
+        Optional[bool],
+        Query(
+            title="decode_times",
+            description="Whether to decode times",
+        ),
+    ] = None
+```
+
+</details>
+
+#### XarrayDsParams
+
+Define options to select a **variable** within a Xarray Dataset.
+
+| Name          | Type        | Required | Default
+| ------        | ----------  |----------|--------------
+| **variable**  | Query (str) | Yes      | None
+| **sel**       | Query (list of str) | No | None
+
+<details>
+
+```python
+@dataclass
+class XarrayDsParams(DefaultDependency):
+    """Xarray Dataset Options."""
+
+    variable: Annotated[str, Query(description="Xarray Variable name.")]
+
+    sel: Annotated[
+        Optional[List[SelDimStr]],
+        Query(
+            description="Xarray Indexing using dimension names `{dimension}={value}` or `{dimension}={method}::{value}`.",
+        ),
+    ] = None
+```
+
+</details>
+
+
+#### XarrayParams
+
+Combination of `XarrayIOParams` and `XarrayDsParams`
+
+| Name             | Type        | Required | Default
+| ------           | ----------  |----------|--------------
+| **group**        | Query (str) | No       | None
+| **decode_times** | Query (bool)| No       | None
+| **variable**     | Query (str) | Yes      | None
+| **sel**          | Query (list of str) | No | None
+
+<details>
+
+```python
+@dataclass
+class XarrayParams(XarrayIOParams, XarrayDsParams):
+    """Xarray Reader dependency."""
+
+    pass
+```
+
+</details>
+
+#### CompatXarrayParams
+
+same as `XarrayParams` but with optional `variable` option.
+
+| Name             | Type        | Required | Default
+| ------           | ----------  |----------|--------------
+| **group**        | Query (str) | No       | None
+| **decode_times** | Query (bool)| No       | None
+| **variable**     | Query (str) | No      | None
+| **sel**          | Query (list of str) | No | None
+
+<details>
+
+```python
+@dataclass
+class XarrayParams(XarrayIOParams, XarrayDsParams):
+    """Xarray Reader dependency."""
+
+    pass
+```
+
+</details>
+
+
+#### DatasetParams
+
+Same as `titiler.core.dependencies.DatasetParams` but with only `nodata` and `reproject`
+
+| Name      | Type      | Required | Default
+| ------    | ----------|----------|--------------
+| **nodata**  | Query (str, int, float)    | No       | None
+| **reproject** | Query (str) | No        | 'nearest'
+
+<details>
+
+```python
+@dataclass
+class DatasetParams(DefaultDependency):
+    """Low level WarpedVRT Optional parameters."""
+
+    nodata: Annotated[
+        Optional[Union[str, int, float]],
+        Query(
+            title="Nodata value",
+            description="Overwrite internal Nodata value",
+        ),
+    ] = None
+    reproject_method: Annotated[
+        Optional[WarpResampling],
+        Query(
+            alias="reproject",
+            description="WarpKernel resampling algorithm (only used when doing re-projection). Defaults to `nearest`.",
+        ),
+    ] = None
+
+    def __post_init__(self):
+        """Post Init."""
+        if self.nodata is not None:
+            self.nodata = numpy.nan if self.nodata == "nan" else float(self.nodata)
+```
+
+</details>
+
+
+#### PartFeatureParams
+
+Same as `titiler.core.dependencies.PartFeatureParams` but with `resampling` option
+
+| Name      | Type      | Required | Default
+| ------    | ----------|----------|--------------
+| **max_size** | Query (int) | No | None
+| **height** | Query (int) | No | None
+| **width** | Query (int) | No | None
+| **resampling** | Query (str) | No | 'nearest'
+
+
+<details>
+
+```python
+@dataclass
+class PartFeatureParams(DefaultDependency):
+    """Common parameters for bbox and feature."""
+
+    # NOTE: the part sizes dependency can either be a Query or a Path Parameter
+    max_size: Annotated[
+        Optional[int], Field(description="Maximum image size to read onto.")
+    ] = None
+    height: Annotated[
+        Optional[int], Field(description="Force output image height.")
+    ] = None
+    width: Annotated[Optional[int], Field(description="Force output image width.")] = (
+        None
+    )
+    resampling_method: Annotated[
+        Optional[RIOResampling],
+        Query(
+            alias="resampling",
+            description="RasterIO resampling algorithm. Defaults to `nearest`.",
+        ),
+    ] = None
+
+    def __post_init__(self):
+        """Post Init."""
+        if self.width or self.height:
+            self.max_size = None
+```
+
+</details>

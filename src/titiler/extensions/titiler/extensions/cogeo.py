@@ -1,11 +1,11 @@
 """rio-cogeo Extension."""
 
-from dataclasses import dataclass
+from typing import Annotated
 
+from attrs import define
 from fastapi import Depends, Query
-from typing_extensions import Annotated
 
-from titiler.core.factory import BaseTilerFactory, FactoryExtension
+from titiler.core.factory import FactoryExtension, TilerFactory
 from titiler.core.resources.responses import JSONResponse
 
 try:
@@ -16,11 +16,11 @@ except ImportError:  # pragma: nocover
     Info = None
 
 
-@dataclass
+@define
 class cogValidateExtension(FactoryExtension):
     """Add /validate endpoint to a COG TilerFactory."""
 
-    def register(self, factory: BaseTilerFactory):
+    def register(self, factory: TilerFactory):
         """Register endpoint to the tiler factory."""
 
         assert (
@@ -31,6 +31,7 @@ class cogValidateExtension(FactoryExtension):
             "/validate",
             response_model=Info,
             response_class=JSONResponse,
+            operation_id=f"{factory.operation_prefix}validate",
         )
         def validate(
             src_path=Depends(factory.path_dependency),

@@ -9,22 +9,25 @@ The `/cog` routes are based on `titiler.core.factory.TilerFactory` but with `cog
 
 | Method | URL                                                                 | Output    | Description
 | ------ | ------------------------------------------------------------------- |---------- |--------------
-| `GET`  | `/cog/bounds`                                                       | JSON      | return dataset's bounds
 | `GET`  | `/cog/info`                                                         | JSON      | return dataset's basic info
 | `GET`  | `/cog/info.geojson`                                                 | GeoJSON   | return dataset's basic info as a GeoJSON feature
 | `GET`  | `/cog/statistics`                                                   | JSON      | return dataset's statistics
 | `POST` | `/cog/statistics`                                                   | GeoJSON   | return dataset's statistics for a GeoJSON
+| `GET`  | `/cog/tiles`                                                        | JSON      | List of OGC Tilesets available
+| `GET`  | `/cog/tiles/{tileMatrixSetId}`                                      | JSON      | OGC Tileset metadata
 | `GET`  | `/cog/tiles/{tileMatrixSetId}/{z}/{x}/{y}[@{scale}x][.{format}]`    | image/bin | create a web map tile image from a dataset
+| `GET`  | `/cog/{tileMatrixSetId}/map.html`                                   | HTML      | simple map viewer
 | `GET`  | `/cog/{tileMatrixSetId}/tilejson.json`                              | JSON      | return a Mapbox TileJSON document
 | `GET`  | `/cog/{tileMatrixSetId}/WMTSCapabilities.xml`                       | XML       | return OGC WMTS Get Capabilities
 | `GET`  | `/cog/point/{lon},{lat}`                                            | JSON      | return pixel values from a dataset
-| `GET`  | `/cog/preview[.{format}]`                                           | image/bin | create a preview image from a dataset
 | `GET`  | `/cog/bbox/{minx},{miny},{maxx},{maxy}[/{width}x{height}].{format}` | image/bin | create an image from part of a dataset
-| `POST` | `/cog/feature[/{width}x{height}][].{format}]`                       | image/bin | create an image from a GeoJSON feature
-| `GET`  | `/cog/{tileMatrixSetId}/map`                                        | HTML      | simple map viewer
+| `POST` | `/cog/feature[/{width}x{height}][.{format}]`                        | image/bin | create an image from a GeoJSON feature
+| `GET`  | `/cog/preview[/{width}x{height}][.{format}]`                        | image/bin | create a preview image from a dataset
+| `GET`  | `/cog/map`                                                          | image/bin | create map image from a dataset
 | `GET`  | `/cog/validate`                                                     | JSON      | validate a COG and return dataset info (from `titiler.extensions.cogValidateExtension`)
 | `GET`  | `/cog/viewer`                                                       | HTML      | demo webpage (from `titiler.extensions.cogViewerExtension`)
 | `GET`  | `/cog/stac`                                                         | GeoJSON   | create STAC Items from a dataset (from `titiler.extensions.stacExtension`)
+
 
 ## Description
 
@@ -38,7 +41,7 @@ The `/cog` routes are based on `titiler.core.factory.TilerFactory` but with `cog
     - **x** (int): TMS tile's column.
     - **y** (int): TMS tile's row.
     - **scale** (int): Tile size scale, default is set to 1 (256x256). **Optional**
-    - **format** (str): Output image format, default is set to None and will be either JPEG or PNG depending on masked value. **Optional**
+    - **format** (str): Output [image format](../user_guide/output_format.md), default is set to None and will be either JPEG or PNG depending on masked value. **Optional**
 
 - QueryParams:
     - **url** (str): Cloud Optimized GeoTIFF URL. **Required**
@@ -67,18 +70,23 @@ Example:
 
 ### Preview
 
-`:endpoint:/cog/preview[.{format}]`
+`:endpoint:/cog/preview`
+
+`:endpoint:/cog/preview.{format}`
+
+`:endpoint:/cog/preview/{width}x{height}.{format}`
 
 - PathParams:
-    - **format** (str): Output image format, default is set to None and will be either JPEG or PNG depending on masked value. **Optional**
+    - **format** (str, optional): Output [image format](../user_guide/output_format.md), default is set to None and will be either JPEG or PNG depending on masked value. **Also a QueryParam**
+    - **height** (int, optional): Force output image height. **Also a QueryParam**
+    - **width** (int, optional): Force output image width. **Also a QueryParam**
 
 - QueryParams:
     - **url** (str): Cloud Optimized GeoTIFF URL. **Required**
     - **bidx** (array[int]): Dataset band indexes (e.g `bidx=1`, `bidx=1&bidx=2&bidx=3`).
     - **expression** (str): rio-tiler's band math expression (e.g `expression=b1/b2`).
     - **max_size** (int): Max image size, default is 1024.
-    - **height** (int): Force output image height.
-    - **width** (int): Force output image width.
+
     - **nodata** (str, int, float): Overwrite internal Nodata value.
     - **unscale** (bool): Apply dataset internal Scale/Offset.
     - **resampling** (str): RasterIO resampling algorithm. Defaults to `nearest`.
@@ -92,15 +100,16 @@ Example:
     - **algorithm_params** (str): JSON encoded algorithm parameters.
 
 !!! important
-    if **height** and **width** are provided **max_size** will be ignored.
+    if **height** or **width** is provided **max_size** will be ignored.
 
 Example:
 
 - `https://myendpoint/cog/preview?url=https://somewhere.com/mycog.tif`
 - `https://myendpoint/cog/preview.jpg?url=https://somewhere.com/mycog.tif&bidx=3&bidx=1&bidx2`
+- `https://myendpoint/cog/preview/100x100.jpg?url=https://somewhere.com/mycog.tif&bidx=3&bidx=1&bidx2`
 - `https://myendpoint/cog/preview?url=https://somewhere.com/mycog.tif&bidx=1&rescale=0,1000&colormap_name=cfastie`
 
-### BBOX/Feature
+### Bbox
 
 `:endpoint:/cog/bbox/{minx},{miny},{maxx},{maxy}.{format}`
 
@@ -108,9 +117,9 @@ Example:
 
 - PathParams:
     - **minx,miny,maxx,maxy** (str): Comma (',') delimited bounding box in WGS84.
-    - **format** (str): Output image format.
-    - **height** (int): Force output image height.
-    - **width** (int): Force output image width.
+    - **format** (str): Output [image format](../user_guide/output_format.md)
+    - **height** (int, optional): Force output image height. **Also a QueryParam**
+    - **width** (int, optional): Force output image width. **Also a QueryParam**
 
 - QueryParams:
     - **url** (str): Cloud Optimized GeoTIFF URL. **Required**
@@ -132,23 +141,54 @@ Example:
     - **algorithm_params** (str): JSON encoded algorithm parameters.
 
 !!! important
-    if **height** and **width** are provided **max_size** will be ignored.
+    if **height** or **width** is provided **max_size** will be ignored.
 
 Example:
 
-- `https://myendpoint/cog/bbox/0,0,10,10.png?url=https://somewhere.com/mycog.tif`
 - `https://myendpoint/cog/bbox/0,0,10,10.png?url=https://somewhere.com/mycog.tif&bidx=1&rescale=0,1000&colormap_name=cfastie`
+- `https://myendpoint/cog/bbox/0,0,10,10/100x100.png?url=https://somewhere.com/mycog.tif`
 
+### OGC Maps API - GetMap
 
-`:endpoint:/cog/feature[/{width}x{height}][].{format}] - [POST]`
+`:endpoint:/cog/map`
+
+- QueryParams:
+    - **url** (str): Cloud Optimized GeoTIFF URL. **Required**
+    - **bidx** (array[int]): Dataset band indexes (e.g `bidx=1`, `bidx=1&bidx=2&bidx=3`).
+    - **expression** (str): rio-tiler's band math expression (e.g `expression=b1/b2`).
+    - **nodata** (str, int, float): Overwrite internal Nodata value.
+    - **unscale** (bool): Apply dataset internal Scale/Offset.
+    - **resampling** (str): RasterIO resampling algorithm. Defaults to `nearest`.
+    - **reproject** (str): WarpKernel resampling algorithm (only used when doing re-projection). Defaults to `nearest`.
+    - **rescale** (array[str]): Comma (',') delimited Min,Max range (e.g `rescale=0,1000`, `rescale=0,1000&rescale=0,3000&rescale=0,2000`).
+    - **color_formula** (str): rio-color formula.
+    - **colormap** (str): JSON encoded custom Colormap.
+    - **colormap_name** (str): rio-tiler color map name.
+    - **return_mask** (bool): Add mask to the output data. Default is True.
+    - **algorithm** (str): Custom algorithm name (e.g `hillshade`).
+    - **algorithm_params** (str): JSON encoded algorithm parameters.
+    - **bbox** (str): Comma (',') delimited bounding box.
+    - **bbox-crs** (str, optional): Coordinate Reference System of the input coordinates. Default to `epsg:4326`.
+    - **crs** (str, optional): Output Coordinate Reference System. Default to dataset'crs.
+    - **height** (int, optional): Force output image height. **Also a QueryParam**
+    - **width** (int, optional): Force output image width. **Also a QueryParam**
+    - **f** (str): Output [image format](../user_guide/output_format.md)
+
+### Feature
+
+`:endpoint:/cog/feature - [POST]`
+
+`:endpoint:/cog/feature.{format} - [POST]`
+
+`:endpoint:/cog/feature/{width}x{height}.{format} - [POST]`
 
 - Body:
     - **feature** (JSON): A valid GeoJSON feature (Polygon or MultiPolygon)
 
 - PathParams:
-    - **height** (int): Force output image height. **Optional**
-    - **width** (int): Force output image width. **Optional**
-    - **format** (str): Output image format, default is set to None and will be either JPEG or PNG depending on masked value. **Optional**
+    - **height** (int, optional): Force output image height. **Also a QueryParam**
+    - **width** (int, optional): Force output image width. **Also a QueryParam**
+    - **format** (str, optional): Output [image format](../user_guide/output_format.md), default is set to None and will be either JPEG or PNG depending on masked value. **Also a QueryParam**
 
 - QueryParams:
     - **url** (str): Cloud Optimized GeoTIFF URL. **Required**
@@ -170,15 +210,13 @@ Example:
     - **algorithm_params** (str): JSON encoded algorithm parameters.
 
 !!! important
-    if **height** and **width** are provided **max_size** will be ignored.
+    if **height** or **width** is provided **max_size** will be ignored.
 
 Example:
 
 - `https://myendpoint/cog/feature?url=https://somewhere.com/mycog.tif`
 - `https://myendpoint/cog/feature.png?url=https://somewhere.com/mycog.tif`
 - `https://myendpoint/cog/feature/100x100.png?url=https://somewhere.com/mycog.tif&bidx=1&rescale=0,1000&colormap_name=cfastie`
-
-Note: if `height` and `width` are provided `max_size` will be ignored.
 
 ### Point
 
@@ -211,7 +249,7 @@ Example:
 
 - QueryParams:
     - **url** (str): Cloud Optimized GeoTIFF URL. **Required**
-    - **tile_format** (str): Output image format, default is set to None and will be either JPEG or PNG depending on masked value.
+    - **tile_format** (str): Output [image format](../user_guide/output_format.md), default is set to None and will be either JPEG or PNG depending on masked value.
     - **tile_scale** (int): Tile size scale, default is set to 1 (256x256).
     - **minzoom** (int): Overwrite default minzoom.
     - **maxzoom** (int): Overwrite default maxzoom.
@@ -240,14 +278,14 @@ Example:
 
 ### Map
 
-`:endpoint:/cog/{tileMatrixSetId}/map` Simple viewer
+`:endpoint:/cog/{tileMatrixSetId}/map.html` Simple viewer
 
 - PathParams:
     - **tileMatrixSetId** (str): TileMatrixSet name (e.g `WebMercatorQuad`)
 
 - QueryParams:
     - **url** (str): Cloud Optimized GeoTIFF URL. **Required**
-    - **tile_format** (str): Output image format, default is set to None and will be either JPEG or PNG depending on masked value.
+    - **tile_format** (str): Output [image format](../user_guide/output_format.md), default is set to None and will be either JPEG or PNG depending on masked value.
     - **tile_scale** (int): Tile size scale, default is set to 1 (256x256).
     - **minzoom** (int): Overwrite default minzoom.
     - **maxzoom** (int): Overwrite default maxzoom.
@@ -269,27 +307,14 @@ Example:
 
 Example:
 
-- `https://myendpoint/cog/WebMercatorQuad/map?url=https://somewhere.com/mycog.tif`
-- `https://myendpoint/cog/WebMercatorQuad/map?url=https://somewhere.com/mycog.tif&tile_format=png`
-- `https://myendpoint/cog/WorldCRS84Quad/map?url=https://somewhere.com/mycog.tif&tile_scale=2&bidx=1,2,3`
+- `https://myendpoint/cog/WebMercatorQuad/map.html?url=https://somewhere.com/mycog.tif`
+- `https://myendpoint/cog/WebMercatorQuad/map.html?url=https://somewhere.com/mycog.tif&tile_format=png`
+- `https://myendpoint/cog/WorldCRS84Quad/map.html?url=https://somewhere.com/mycog.tif&tile_scale=2&bidx=1,2,3`
 
-
-### Bounds
-
-`:endpoint:/cog/bounds` general image bounds
-
-- QueryParams:
-    - **url** (str): Cloud Optimized GeoTIFF URL. **Required**
-
-Example:
-
-- `https://myendpoint/cog/bounds?url=https://somewhere.com/mycog.tif`
 
 ### Info
 
 `:endpoint:/cog/info` general raster info
-
-`:endpoint:/cog/info.geojson` general raster info as a GeoJSON feature
 
 - QueryParams:
     - **url** (str): Cloud Optimized GeoTIFF URL. **Required**
@@ -297,8 +322,16 @@ Example:
 Example:
 
 - `https://myendpoint/cog/info?url=https://somewhere.com/mycog.tif`
-- `https://myendpoint/cog/info.geojson?url=https://somewhere.com/mycog.tif`
 
+`:endpoint:/cog/info.geojson` general raster info as a GeoJSON feature
+
+- QueryParams:
+    - **url** (str): Cloud Optimized GeoTIFF URL. **Required**
+    - **crs** (str): Geographic Coordinate Reference System. Default to `epsg:4326`.
+
+Example:
+
+- `https://myendpoint/cog/info.geojson?url=https://somewhere.com/mycog.tif`
 
 ### Statistics
 

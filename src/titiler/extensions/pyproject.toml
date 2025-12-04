@@ -1,8 +1,8 @@
 [project]
-name = "titiler.extensions"
+name = "titiler-extensions"
 description = "Extensions for TiTiler Factories."
 readme = "README.md"
-requires-python = ">=3.8"
+requires-python = ">=3.11"
 authors = [
     {name = "Vincent Sarago", email = "vincent@developmentseed.com"},
 ]
@@ -22,32 +22,32 @@ classifiers = [
     "Intended Audience :: Science/Research",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.8",
-    "Programming Language :: Python :: 3.9",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Topic :: Scientific/Engineering :: GIS",
 ]
 dynamic = ["version"]
 dependencies = [
-    "titiler.core==0.18.3",
-    "requests>=2.31.0"
+    "requests>=2.35.0"
+    "titiler-core==0.26.0"
 ]
 
 [project.optional-dependencies]
+cogeo = [
+    "rio-cogeo>=5.0,<6.0",
+]
+stac = [
+    "rio-stac>=0.12,<0.13",
+]
+
+[dependency-groups]
 test = [
     "pytest",
     "pytest-cov",
     "pytest-asyncio",
     "httpx",
     "pystac[validation]>=1.0.0,<2.0.0",
-]
-cogeo = [
-    "rio-cogeo>=5.0,<6.0",
-]
-stac = [
-    "rio-stac>=0.8,<0.9",
 ]
 
 [project.urls]
@@ -57,14 +57,15 @@ Issues = "https://github.com/developmentseed/titiler/issues"
 Source = "https://github.com/developmentseed/titiler"
 Changelog = "https://developmentseed.org/titiler/release-notes/"
 
-[build-system]
-requires = ["pdm-pep517"]
-build-backend = "pdm.pep517.api"
-
-[tool.pdm.version]
-source = "file"
+[tool.hatch.version]
 path = "titiler/extensions/__init__.py"
 
-[tool.pdm.build]
-includes = ["titiler/extensions"]
-excludes = ["tests/", "**/.mypy_cache", "**/.DS_Store"]
+[tool.hatch.build.targets.sdist]
+only-include = ["titiler"]
+
+[tool.hatch.build.targets.wheel]
+only-include = ["titiler"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

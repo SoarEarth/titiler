@@ -13,18 +13,6 @@ from ..conftest import DATA_DIR, mock_rasterio_open, parse_img
 
 
 @patch("rio_tiler.io.rasterio.rasterio")
-def test_bounds(rio, app):
-    """test /bounds endpoint."""
-    rio.open = mock_rasterio_open
-
-    response = app.get("/cog/bounds?url=https://myurl.com/cog.tif")
-    assert response.status_code == 200
-    body = response.json()
-    assert len(body["bounds"]) == 4
-    assert response.headers["Cache-Control"] == "private, max-age=3600"
-
-
-@patch("rio_tiler.io.rasterio.rasterio")
 def test_info(rio, app):
     """test /info endpoint."""
     rio.open = mock_rasterio_open
@@ -64,7 +52,7 @@ def test_wmts(rio, app):
         "http://testserver/cog/WebMercatorQuad/WMTSCapabilities.xml?url=https"
         in response.content.decode()
     )
-    assert "<ows:Identifier>Dataset</ows:Identifier>" in response.content.decode()
+    assert "<ows:Identifier>default</ows:Identifier>" in response.content.decode()
     assert (
         "http://testserver/cog/tiles/WebMercatorQuad/{TileMatrix}/{TileCol}/{TileRow}@1x.png?url=https"
         in response.content.decode()
@@ -260,7 +248,7 @@ def test_tilejson(rio, app):
     )
     assert response.status_code == 200
     body = response.json()
-    assert body["tilejson"] == "2.2.0"
+    assert body["tilejson"] == "3.0.0"
     assert body["version"] == "1.0.0"
     assert body["scheme"] == "xyz"
     assert len(body["tiles"]) == 1

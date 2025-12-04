@@ -1,12 +1,12 @@
 """rio-stac Extension."""
 
-from dataclasses import dataclass
-from typing import Any, Dict, List, Literal, Optional
+from typing import Annotated, Any, Dict, List, Literal, Optional
 
+from attrs import define
 from fastapi import Depends, Query
-from typing_extensions import Annotated, TypedDict
+from typing_extensions import TypedDict
 
-from titiler.core.factory import BaseTilerFactory, FactoryExtension
+from titiler.core.factory import FactoryExtension, TilerFactory
 
 try:
     import pystac
@@ -33,11 +33,11 @@ class Item(TypedDict, total=False):
     collection: str
 
 
-@dataclass
+@define
 class stacExtension(FactoryExtension):
     """Add /stac endpoint to a COG TilerFactory."""
 
-    def register(self, factory: BaseTilerFactory):
+    def register(self, factory: TilerFactory):
         """Register endpoint to the tiler factory."""
 
         assert (
@@ -47,7 +47,12 @@ class stacExtension(FactoryExtension):
 
         media = [m.value for m in pystac.MediaType] + ["auto"]
 
-        @factory.router.get("/stac", response_model=Item, name="Create STAC Item")
+        @factory.router.get(
+            "/stac",
+            response_model=Item,
+            name="Create STAC Item",
+            operation_id=f"{factory.operation_prefix}createSTAC",
+        )
         def create_stac(
             src_path=Depends(factory.path_dependency),
             datetime: Annotated[
@@ -128,9 +133,7 @@ class stacExtension(FactoryExtension):
             ] = -1,
         ):
             """Create STAC item."""
-            properties = (
-                {}
-            )  # or properties = properties or {} if we add properties in Query
+            properties = {}  # or properties = properties or {} if we add properties in Query
 
             dt = None
             if datetime:

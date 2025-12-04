@@ -3,6 +3,7 @@
 import json
 
 import numpy
+import pytest
 from fastapi import Depends, FastAPI
 from rasterio.io import MemoryFile
 from rio_tiler.models import ImageData
@@ -168,6 +169,29 @@ def test_hillshade():
     assert out.array[0, 0, 0] is numpy.ma.masked
 
 
+def test_slope():
+    """test slope."""
+    algo = default_algorithms.get("slope")()
+
+    arr = numpy.random.randint(0, 5000, (1, 262, 262), dtype="uint16")
+    img = ImageData(arr)
+    out = algo(img)
+    assert out.array.shape == (1, 256, 256)
+    assert out.array.dtype == "float32"
+
+    arr = numpy.ma.MaskedArray(
+        numpy.random.randint(0, 5000, (1, 262, 262), dtype="uint16"),
+        mask=numpy.zeros((1, 262, 262), dtype="bool"),
+    )
+    arr.mask[0, 0:100, 0:100] = True
+
+    img = ImageData(arr)
+    out = algo(img)
+    assert out.array.shape == (1, 256, 256)
+    assert out.array.dtype == "float32"
+    assert out.array[0, 0, 0] is numpy.ma.masked
+
+
 def test_contours():
     """test contours."""
     algo = default_algorithms.get("contours")()
@@ -213,6 +237,16 @@ def test_terrarium():
     assert out.array.dtype == "uint8"
     assert out.array[0, 0, 0] is numpy.ma.masked
 
+    # works on the above masked array img, with algo which was passed nodata_height
+    nodata_height = 10.0
+    algo = default_algorithms.get("terrarium")(nodata_height=nodata_height)
+    out = algo(img)
+    masked = out.array[:, arr.mask[0, :, :]]
+    masked_height = (masked[0] * 256 + masked[1] + masked[2] / 256) - 32768
+    numpy.testing.assert_array_equal(
+        masked_height, nodata_height * numpy.ones((100 * 100), dtype="bool")
+    )
+
 
 def test_terrainrgb():
     """test terrainrgb."""
@@ -235,3 +269,152 @@ def test_terrainrgb():
     assert out.array.shape == (3, 256, 256)
     assert out.array.dtype == "uint8"
     assert out.array[0, 0, 0] is numpy.ma.masked
+
+    # works on the above masked array img, with algo which was passed nodata_height
+    nodata_height = 10.0
+    algo = default_algorithms.get("terrainrgb")(nodata_height=nodata_height)
+    out = algo(img)
+    masked = out.array[:, arr.mask[0, :, :]]
+    masked_height = -10000 + (
+        ((masked[0] * 256 * 256) + (masked[1] * 256) + masked[2]) * 0.1
+    )
+    numpy.testing.assert_array_equal(
+        masked_height, nodata_height * numpy.ones((100 * 100), dtype="bool")
+    )
+
+
+def test_ops():
+    """test ops: cast, ceil and floor."""
+    arr = numpy.ma.MaskedArray(
+        numpy.random.randint(0, 5000, (1, 256, 256)).astype("float32"),
+        mask=numpy.zeros((1, 256, 256), dtype="bool"),
+    )
+    arr.data[0, 0, 0] = 1.6
+    arr.mask[0, 1:100, 1:100] = True
+
+    img = ImageData(arr)
+    assert img.array.dtype == numpy.float32
+
+    algo = default_algorithms.get("cast")()
+    out = algo(img)
+    assert out.array.shape == (1, 256, 256)
+    assert out.array.dtype == "uint8"
+    assert out.array[0, 0, 0] == 1
+    assert out.array[0, 1, 1] is numpy.ma.masked
+
+    assert img.array.dtype == numpy.float32
+    algo = default_algorithms.get("floor")()
+    out = algo(img)
+    assert out.array.shape == (1, 256, 256)
+    assert out.array.dtype == "uint8"
+    assert out.array[0, 0, 0] == 1
+    assert out.array[0, 1, 1] is numpy.ma.masked
+
+    assert img.array.dtype == numpy.float32
+    algo = default_algorithms.get("ceil")()
+    out = algo(img)
+    assert out.array.shape == (1, 256, 256)
+    assert out.array.dtype == "uint8"
+    assert out.array[0, 0, 0] == 2
+    assert out.array[0, 1, 1] is numpy.ma.masked
+
+
+@pytest.mark.parametrize(
+    "name,numpy_method,options",
+    [
+        ("min", numpy.ma.min, {}),
+        ("max", numpy.ma.max, {}),
+        ("median", numpy.ma.median, {}),
+        ("mean", numpy.ma.mean, {}),
+        ("std", numpy.ma.std, {"ddof": 1}),
+        ("var", numpy.ma.var, {"ddof": 1}),
+        ("sum", numpy.ma.sum, {}),
+    ],
+)
+def test_math_algorithm(name, numpy_method, options):
+    """test math algos."""
+    arr = numpy.ma.MaskedArray(
+        numpy.random.randint(0, 5000, (1, 256, 256)).astype("float32"),
+        mask=numpy.zeros((1, 256, 256), dtype="bool"),
+    )
+    arr.data[0, 0, 0] = 1.6
+    arr.mask[0, 1:100, 1:100] = True
+
+    img = ImageData(arr)
+    assert img.array.dtype == numpy.float32
+
+    algo = default_algorithms.get(name)()
+    out = algo(img)
+
+    numpy.testing.assert_array_equal(
+        out.array, numpy_method(img.array, axis=0, keepdims=True, **options)
+    )
+    assert out.array[0, 1, 1] is numpy.ma.masked
+
+
+def test_bitonal_algorithm():
+    """Test bitonal algorithm."""
+    algo = default_algorithms.get("bitonal")()
+
+    arr = numpy.ma.MaskedArray(
+        numpy.zeros((1, 256, 256), dtype="uint8"),
+        mask=numpy.zeros((1, 256, 256), dtype="bool"),
+    )
+    arr.data[0, 100:200, 100:200] = 200
+    arr.mask[0, 120:130, 120:130] = True
+    img = ImageData(arr)
+    out = algo(img)
+    assert out.array.shape == (1, 256, 256)
+    assert out.array.dtype == "uint8"
+    assert out.array[0, 125, 125] is numpy.ma.masked
+    assert out.array[0, 150, 150] == 255
+    assert out.array[0, 50, 50] == 0
+
+    arr = numpy.ma.MaskedArray(
+        numpy.zeros((3, 256, 256), dtype="uint8"),
+        mask=numpy.zeros((3, 256, 256), dtype="bool"),
+    )
+    arr.data[:, 100:200, 100:200] = 200
+    arr.mask[0, 120:130, 120:130] = True
+    img = ImageData(arr)
+    out = algo(img)
+    assert out.array.shape == (1, 256, 256)
+    assert out.array.dtype == "uint8"
+    assert out.array[0, 125, 125] is numpy.ma.masked
+    assert out.array[0, 150, 150] == 255
+    assert out.array[0, 50, 50] == 0
+
+    arr = numpy.ma.MaskedArray(
+        numpy.zeros((4, 256, 256), dtype="uint8"),
+        mask=numpy.zeros((4, 256, 256), dtype="bool"),
+    )
+    img = ImageData(arr)
+    with pytest.raises(ValueError):
+        out = algo(img)
+
+
+def test_grayscale_algorithm():
+    """Test grayscale algorithm."""
+    algo = default_algorithms.get("grayscale")()
+
+    arr = numpy.ma.MaskedArray(
+        numpy.zeros((3, 256, 256), dtype="uint8"),
+        mask=numpy.zeros((3, 256, 256), dtype="bool"),
+    )
+    arr.data[:, 100:200, 100:200] = 200
+    arr.mask[0, 120:130, 120:130] = True
+    img = ImageData(arr)
+    out = algo(img)
+    assert out.array.shape == (1, 256, 256)
+    assert out.array.dtype == "uint8"
+    assert out.array[0, 125, 125] is numpy.ma.masked
+    assert out.array[0, 150, 150] != 0
+    assert out.array[0, 50, 50] == 0
+
+    arr = numpy.ma.MaskedArray(
+        numpy.zeros((2, 256, 256), dtype="uint8"),
+        mask=numpy.zeros((2, 256, 256), dtype="bool"),
+    )
+    img = ImageData(arr)
+    with pytest.raises(ValueError):
+        out = algo(img)

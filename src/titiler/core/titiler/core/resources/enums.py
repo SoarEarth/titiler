@@ -10,6 +10,7 @@ class MediaType(str, Enum):
     """Responses Media types formerly known as MIME types."""
 
     tif = "image/tiff; application=geotiff"
+    tiff = "image/tiff; application=geotiff"
     jp2 = "image/jp2"
     png = "image/png"
     pngraw = "image/png"
@@ -30,6 +31,7 @@ class MediaType(str, Enum):
     csv = "text/csv"
     openapi30_json = "application/vnd.oai.openapi+json;version=3.0"
     openapi30_yaml = "application/vnd.oai.openapi;version=3.0"
+    gif = "image/gif"
 
 
 class ImageDriver(str, Enum):
@@ -40,9 +42,11 @@ class ImageDriver(str, Enum):
     png = "PNG"
     pngraw = "PNG"
     tif = "GTiff"
+    tiff = "GTiff"
     webp = "WEBP"
     jp2 = "JP2OpenJPEG"
     npy = "NPY"
+    gif = "GIF"
 
 
 class ImageType(str, Enum):
@@ -51,6 +55,7 @@ class ImageType(str, Enum):
     png = "png"
     npy = "npy"
     tif = "tif"
+    tiff = "tiff"
     jpeg = "jpeg"
     jpg = "jpg"
     jp2 = "jp2"

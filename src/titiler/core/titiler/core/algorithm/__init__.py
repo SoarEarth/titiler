@@ -2,23 +2,42 @@
 
 import json
 from copy import copy
-from typing import Dict, List, Literal, Optional, Type
+from typing import Annotated, Dict, List, Literal, Optional, Type
 
 import attr
 from fastapi import HTTPException, Query
 from pydantic import ValidationError
-from typing_extensions import Annotated
 
-from titiler.core.algorithm.base import AlgorithmMetadata, BaseAlgorithm  # noqa
-from titiler.core.algorithm.dem import Contours, HillShade, TerrainRGB, Terrarium
+from titiler.core.algorithm.base import (  # noqa
+    AlgorithmMetadata,
+    AlgorithmtList,
+    BaseAlgorithm,
+)
+from titiler.core.algorithm.dem import Contours, HillShade, Slope, TerrainRGB, Terrarium
+from titiler.core.algorithm.image import ToBitonal, ToGrayScale
 from titiler.core.algorithm.index import NormalizedIndex
+from titiler.core.algorithm.math import _Max, _Mean, _Median, _Min, _Std, _Sum, _Var
+from titiler.core.algorithm.ops import CastToInt, Ceil, Floor
 
 default_algorithms: Dict[str, Type[BaseAlgorithm]] = {
     "hillshade": HillShade,
+    "slope": Slope,
     "contours": Contours,
     "normalizedIndex": NormalizedIndex,
     "terrarium": Terrarium,
     "terrainrgb": TerrainRGB,
+    "cast": CastToInt,
+    "ceil": Ceil,
+    "floor": Floor,
+    "min": _Min,
+    "max": _Max,
+    "median": _Median,
+    "mean": _Mean,
+    "std": _Std,
+    "var": _Var,
+    "sum": _Sum,
+    "grayscale": ToGrayScale,
+    "bitonal": ToBitonal,
 }
 
 

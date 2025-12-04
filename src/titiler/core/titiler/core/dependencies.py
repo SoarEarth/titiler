@@ -2,18 +2,32 @@
 
 import json
 import warnings
-from dataclasses import dataclass
-from typing import Callable, Dict, List, Literal, Optional, Sequence, Tuple, Union
+from dataclasses import dataclass, field
+from typing import (
+    Annotated,
+    Callable,
+    Dict,
+    List,
+    Literal,
+    Optional,
+    Sequence,
+    Tuple,
+    Union,
+)
 
 import numpy
 from fastapi import HTTPException, Query
+from pydantic import Field
 from rasterio.crs import CRS
 from rio_tiler.colormap import ColorMaps
 from rio_tiler.colormap import cmap as default_cmap
 from rio_tiler.colormap import parse_color
 from rio_tiler.errors import MissingAssets, MissingBands
 from rio_tiler.types import RIOResampling, WarpResampling
-from typing_extensions import Annotated
+from starlette.requests import Request
+
+from titiler.core.resources.enums import ImageType, MediaType
+from titiler.core.utils import accept_media_type
 
 
 def create_colormap_dependency(cmap: ColorMaps) -> Callable:
@@ -67,13 +81,12 @@ def DatasetPathParams(url: Annotated[str, Query(description="Dataset URL")]) -> 
 class DefaultDependency:
     """Dataclass with dict unpacking"""
 
-    def keys(self):
-        """Return Keys."""
-        return self.__dict__.keys()
+    def as_dict(self, exclude_none: bool = True) -> Dict:
+        """Transform dataclass to dict."""
+        if exclude_none:
+            return {k: v for k, v in self.__dict__.items() if v is not None}
 
-    def __getitem__(self, key):
-        """Return value."""
-        return self.__dict__[key]
+        return dict(self.__dict__.items())
 
 
 # Dependencies for simple BaseReader (e.g COGReader)
@@ -88,6 +101,7 @@ class BidxParams(DefaultDependency):
             alias="bidx",
             description="Dataset band indexes",
             openapi_examples={
+                "user-provided": {"value": None},
                 "one-band": {"value": [1]},
                 "multi-bands": {"value": [1, 2, 3]},
             },
@@ -105,6 +119,7 @@ class ExpressionParams(DefaultDependency):
             title="Band Math expression",
             description="rio-tiler's band math expression",
             openapi_examples={
+                "user-provided": {"value": None},
                 "simple": {"description": "Simple band math.", "value": "b1/b2"},
                 "multi-bands": {
                     "description": "Semicolon (;) delimited expressions (band1: b1/b2, band2: b2+b3).",
@@ -133,6 +148,7 @@ class AssetsParams(DefaultDependency):
             title="Asset names",
             description="Asset's names.",
             openapi_examples={
+                "user-provided": {"value": None},
                 "one-asset": {
                     "description": "Return results for asset `data`.",
                     "value": ["data"],
@@ -173,6 +189,7 @@ class AssetsBidxExprParams(AssetsParams, BidxParams):
             title="Band Math expression",
             description="Band math expression between assets",
             openapi_examples={
+                "user-provided": {"value": None},
                 "simple": {
                     "description": "Return results of expression between assets.",
                     "value": "asset1_b1 + asset2_b1 / asset3_b1",
@@ -188,6 +205,7 @@ class AssetsBidxExprParams(AssetsParams, BidxParams):
             description="Per asset band indexes (coma separated indexes)",
             alias="asset_bidx",
             openapi_examples={
+                "user-provided": {"value": None},
                 "one-asset": {
                     "description": "Return indexes 1,2,3 of asset `data`.",
                     "value": ["data|1,2,3"],
@@ -222,6 +240,7 @@ class AssetsBidxExprParams(AssetsParams, BidxParams):
             warnings.warn(
                 "Both `asset_bidx` and `bidx` passed; only `asset_bidx` will be considered.",
                 UserWarning,
+                stacklevel=1,
             )
 
 
@@ -238,6 +257,7 @@ class AssetsBidxExprParamsOptional(AssetsBidxExprParams):
             warnings.warn(
                 "Both `asset_bidx` and `bidx` passed; only `asset_bidx` will be considered.",
                 UserWarning,
+                stacklevel=1,
             )
 
 
@@ -252,6 +272,7 @@ class AssetsBidxParams(AssetsParams, BidxParams):
             description="Per asset band indexes",
             alias="asset_bidx",
             openapi_examples={
+                "user-provided": {"value": None},
                 "one-asset": {
                     "description": "Return indexes 1,2,3 of asset `data`.",
                     "value": ["data|1;2;3"],
@@ -270,6 +291,7 @@ class AssetsBidxParams(AssetsParams, BidxParams):
             title="Per asset band expression",
             description="Per asset band expression",
             openapi_examples={
+                "user-provided": {"value": None},
                 "one-asset": {
                     "description": "Return results for expression `b1*b2+b3` of asset `data`.",
                     "value": ["data|b1*b2+b3"],
@@ -294,6 +316,7 @@ class AssetsBidxParams(AssetsParams, BidxParams):
             warnings.warn(
                 "Both `asset_bidx` and `bidx` passed; only `asset_bidx` will be considered.",
                 UserWarning,
+                stacklevel=1,
             )
 
 
@@ -308,6 +331,7 @@ class BandsParams(DefaultDependency):
             title="Band names",
             description="Band's names.",
             openapi_examples={
+                "user-provided": {"value": None},
                 "one-band": {
                     "description": "Return results for band `B01`.",
                     "value": ["B01"],
@@ -344,13 +368,20 @@ class BandsExprParams(ExpressionParams, BandsParams):
 class PreviewParams(DefaultDependency):
     """Common Preview parameters."""
 
-    max_size: Annotated[int, "Maximum image size to read onto."] = 1024
-    height: Annotated[Optional[int], "Force output image height."] = None
-    width: Annotated[Optional[int], "Force output image width."] = None
+    # NOTE: sizes dependency can either be a Query or a Path Parameter
+    max_size: Annotated[int, Field(description="Maximum image size to read onto.")] = (
+        1024
+    )
+    height: Annotated[
+        Optional[int], Field(description="Force output image height.")
+    ] = None
+    width: Annotated[Optional[int], Field(description="Force output image width.")] = (
+        None
+    )
 
     def __post_init__(self):
         """Post Init."""
-        if self.width and self.height:
+        if self.width or self.height:
             self.max_size = None
 
 
@@ -358,13 +389,20 @@ class PreviewParams(DefaultDependency):
 class PartFeatureParams(DefaultDependency):
     """Common parameters for bbox and feature."""
 
-    max_size: Annotated[Optional[int], "Maximum image size to read onto."] = None
-    height: Annotated[Optional[int], "Force output image height."] = None
-    width: Annotated[Optional[int], "Force output image width."] = None
+    # NOTE: the part sizes dependency can either be a Query or a Path Parameter
+    max_size: Annotated[
+        Optional[int], Field(description="Maximum image size to read onto.")
+    ] = None
+    height: Annotated[
+        Optional[int], Field(description="Force output image height.")
+    ] = None
+    width: Annotated[Optional[int], Field(description="Force output image width.")] = (
+        None
+    )
 
     def __post_init__(self):
         """Post Init."""
-        if self.width and self.height:
+        if self.width or self.height:
             self.max_size = None
 
 
@@ -380,51 +418,43 @@ class DatasetParams(DefaultDependency):
         ),
     ] = None
     unscale: Annotated[
-        bool,
+        Optional[bool],
         Query(
             title="Apply internal Scale/Offset",
             description="Apply internal Scale/Offset. Defaults to `False`.",
         ),
-    ] = False
+    ] = None
     resampling_method: Annotated[
-        RIOResampling,
+        Optional[RIOResampling],
         Query(
             alias="resampling",
             description="RasterIO resampling algorithm. Defaults to `nearest`.",
         ),
-    ] = "nearest"
+    ] = None
     reproject_method: Annotated[
-        WarpResampling,
+        Optional[WarpResampling],
         Query(
             alias="reproject",
             description="WarpKernel resampling algorithm (only used when doing re-projection). Defaults to `nearest`.",
         ),
-    ] = "nearest"
+    ] = None
 
     def __post_init__(self):
         """Post Init."""
         if self.nodata is not None:
             self.nodata = numpy.nan if self.nodata == "nan" else float(self.nodata)
-        self.unscale = bool(self.unscale)
+
+        if self.unscale is not None:
+            self.unscale = bool(self.unscale)
+
+
+RescaleType = List[Tuple[float, float]]
 
 
 @dataclass
-class ImageRenderingParams(DefaultDependency):
+class RenderingParams(DefaultDependency):
     """Image Rendering options."""
 
-    add_mask: Annotated[
-        bool,
-        Query(
-            alias="return_mask",
-            description="Add mask to the output data. Defaults to `True`",
-        ),
-    ] = True
-
-
-RescaleType = List[Tuple[float, ...]]
-
-
-def RescalingParams(
     rescale: Annotated[
         Optional[List[str]],
         Query(
@@ -432,26 +462,46 @@ def RescalingParams(
             description="comma (',') delimited Min,Max range. Can set multiple time for multiple bands.",
             examples=["0,2000", "0,1000", "0,10000"],  # band 1  # band 2  # band 3
         ),
-    ] = None,
-) -> Optional[RescaleType]:
-    """Min/Max data Rescaling"""
-    if rescale:
-        rescale_array = []
-        for r in rescale:
-            parsed = tuple(
-                map(
-                    float,
-                    r.replace(" ", "").replace("[", "").replace("]", "").split(","),
+    ] = None
+
+    color_formula: Annotated[
+        Optional[str],
+        Query(
+            title="Color Formula",
+            description="rio-color formula (info: https://github.com/mapbox/rio-color)",
+        ),
+    ] = None
+
+    def __post_init__(self) -> None:
+        """Post Init."""
+        if self.rescale:
+            rescale_array = []
+            for r in self.rescale:
+                parsed = tuple(
+                    map(
+                        float,
+                        r.replace(" ", "").replace("[", "").replace("]", "").split(","),
+                    )
                 )
-            )
-            assert (
-                len(parsed) == 2
-            ), f"Invalid rescale values: {rescale}, should be of form ['min,max', 'min,max'] or [[min,max], [min, max]]"
-            rescale_array.append(parsed)
+                assert (
+                    len(parsed) == 2
+                ), f"Invalid rescale values: {self.rescale}, should be of form ['min,max', 'min,max'] or [[min,max], [min, max]]"
+                rescale_array.append(parsed)
 
-        return rescale_array
+            self.rescale: RescaleType = rescale_array  # type: ignore
 
-    return None
+
+@dataclass
+class ImageRenderingParams(RenderingParams):
+    """Image Rendering options."""
+
+    add_mask: Annotated[
+        Optional[bool],
+        Query(
+            alias="return_mask",
+            description="Add mask to the output data. Defaults to `True`",
+        ),
+    ] = None
 
 
 @dataclass
@@ -459,9 +509,11 @@ class StatisticsParams(DefaultDependency):
     """Statistics options."""
 
     categorical: Annotated[
-        bool,
-        Query(description="Return statistics for categorical dataset."),
-    ] = False
+        Optional[bool],
+        Query(
+            description="Return statistics for categorical dataset. Defaults to `False`"
+        ),
+    ] = None
     categories: Annotated[
         Optional[List[Union[float, int]]],
         Query(
@@ -504,6 +556,7 @@ If bins is a sequence (comma `,` delimited values), it defines a monotonically i
 link: https://numpy.org/doc/stable/reference/generated/numpy.histogram.html
             """,
             openapi_examples={
+                "user-provided": {"value": None},
                 "simple": {
                     "description": "Defines the number of equal-width bins",
                     "value": 8,
@@ -531,7 +584,13 @@ range affects the automatic bin computation as well.
 
 link: https://numpy.org/doc/stable/reference/generated/numpy.histogram.html
             """,
-            examples="0,1000",
+            openapi_examples={
+                "user-provided": {"value": None},
+                "array": {
+                    "description": "Defines custom histogram range (comma `,` delimited values)",
+                    "value": "0,1000",
+                },
+            },
         ),
     ] = None
 
@@ -587,6 +646,21 @@ def DstCRSParams(
     return None
 
 
+def CRSParams(
+    crs: Annotated[
+        Optional[str],
+        Query(
+            description="Coordinate Reference System.",
+        ),
+    ] = None,
+) -> Optional[CRS]:
+    """Coordinate Reference System Coordinates Param."""
+    if crs:
+        return CRS.from_user_input(crs)
+
+    return None
+
+
 def BufferParams(
     buffer: Annotated[
         Optional[float],
@@ -599,19 +673,6 @@ def BufferParams(
 ) -> Optional[float]:
     """Tile buffer Parameter."""
     return buffer
-
-
-def ColorFormulaParams(
-    color_formula: Annotated[
-        Optional[str],
-        Query(
-            title="Color Formula",
-            description="rio-color formula (info: https://github.com/mapbox/rio-color)",
-        ),
-    ] = None,
-) -> Optional[str]:
-    """ColorFormula Parameter."""
-    return color_formula
 
 
 @dataclass
@@ -635,3 +696,89 @@ class TileParams(DefaultDependency):
             description="Padding to apply to each tile edge. Helps reduce resampling artefacts along edges. Defaults to `0`.",
         ),
     ] = None
+
+
+@dataclass
+class OGCMapsParams(DefaultDependency):
+    """OGC Maps options."""
+
+    request: Request
+
+    bbox: Annotated[
+        Optional[str],
+        Query(
+            description="Bounding box of the rendered map. The bounding box is provided as four or six coordinates.",
+        ),
+    ] = None
+
+    crs: Annotated[
+        Optional[str],
+        Query(
+            description="Reproject the output to the given crs.",
+        ),
+    ] = None
+
+    bbox_crs: Annotated[
+        Optional[str],
+        Query(
+            description="crs for the specified bbox.",
+            alias="bbox-crs",
+        ),
+    ] = None
+
+    height: Annotated[
+        Optional[int],
+        Query(
+            description="Height of the map in pixels. If omitted and `width` is specified, defaults to the `height` maintaining a 1:1 aspect ratio. If both `width` and `height` are omitted, the server will select default dimensions.",
+            gt=0,
+        ),
+    ] = None
+
+    width: Annotated[
+        Optional[int],
+        Query(
+            description="Width of the map in pixels. If omitted and `height` is specified, defaults to the `width` maintaining a 1:1 aspect ratio. If both `width` and `height` are omitted, the server will select default dimensions.",
+            gt=0,
+        ),
+    ] = None
+
+    f: Annotated[
+        Optional[ImageType],
+        Query(description="The format of the map response (e.g. png)."),
+    ] = None
+
+    max_size: Optional[int] = field(init=False, default=None)
+
+    format: Optional[ImageType] = field(init=False, default=ImageType.png)
+
+    def __post_init__(self):  # noqa: C901
+        """Parse and validate."""
+        if self.crs:
+            if self.crs.startswith("[") and self.crs.endswith("]"):
+                self.crs = self.crs[1:-1]
+            self.crs = CRS.from_user_input(self.crs)  # type: ignore
+
+        if self.bbox_crs:
+            if self.bbox_crs.startswith("[") and self.bbox_crs.endswith("]"):
+                self.bbox_crs = self.bbox_crs[1:-1]
+            self.bbox_crs = CRS.from_user_input(self.bbox_crs)  # type: ignore
+
+        if not self.height and not self.width:
+            self.max_size = 1024
+
+        if self.bbox:
+            bounds = list(map(float, self.bbox.split(",")))
+            if len(bounds) == 6:
+                bounds = [bounds[0], bounds[1], bounds[3], bounds[4]]
+
+            self.bbox = bounds  # type: ignore
+
+        if self.f:
+            self.format = ImageType[self.f]
+
+        else:
+            if media := accept_media_type(
+                self.request.headers.get("accept", ""),
+                [MediaType[e] for e in ImageType],
+            ):
+                self.format = ImageType[media.name]

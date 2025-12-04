@@ -2,7 +2,7 @@
 
 TiTiler is built on top of [FastAPI](https://github.com/tiangolo/fastapi), a modern, fast, Python web framework for building APIs. We can make our FastAPI application work as an Azure Function by wrapping it within the [Azure Function Python worker](https://github.com/Azure/azure-functions-python-worker).
 
-If you are not familiar with **Azure functions** we recommend checking https://docs.microsoft.com/en-us/azure/azure-functions/ first.
+If you are not familiar with **Azure functions**, we recommend checking https://docs.microsoft.com/en-us/azure/azure-functions/ first.
 
 Minimal TiTiler Azure function code:
 ```python
@@ -40,9 +40,9 @@ $ cd titiler/deployment/azure
 
 $ az login
 $ az group create --name AzureFunctionsTiTiler-rg --location eastus
-$ az storage account create --name titilerstorage --sku Standard_LRS -g AzureFunctionsTiTiler-rg
-$ az functionapp create --consumption-plan-location eastus --runtime python --runtime-version 3.8 --functions-version 3 --name titiler --os-type linux -g AzureFunctionsTiTiler-rg -s titilerstorage
-$ func azure functionapp publish titiler
+$ az storage account create --name {your-new-storage-name} --sku Standard_LRS -g AzureFunctionsTiTiler-rg
+$ az functionapp create --consumption-plan-location eastus --runtime python --runtime-version 3.9 --functions-version 4 --name {your-new-function-name} --os-type linux -g AzureFunctionsTiTiler-rg -s {your-new-storage-name}
+$ func azure functionapp publish titiler --python
 ```
 
 or

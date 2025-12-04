@@ -42,35 +42,27 @@ def test_read_mosaic(app):
     MosaicJSON(**response.json())
 
 
-def test_bounds(app):
-    """test GET /mosaicjson/bounds endpoint"""
-    response = app.get("/mosaicjson/bounds", params={"url": MOSAICJSON_FILE})
-    assert response.status_code == 200
-    body = response.json()
-    assert len(body["bounds"]) == 4
-    assert body["bounds"][0] < body["bounds"][2]
-    assert body["bounds"][1] < body["bounds"][3]
-
-
 def test_info(app):
     """test GET /mosaicjson/info endpoint"""
     response = app.get("/mosaicjson/info", params={"url": MOSAICJSON_FILE})
     assert response.status_code == 200
     body = response.json()
-    assert body["minzoom"] == 7
-    assert body["maxzoom"] == 9
     assert body["name"] == "mosaic"  # mosaic.name is not set
     assert body["quadkeys"] == []
+    assert body["mosaic_minzoom"] == 7
+    assert body["mosaic_maxzoom"] == 9
+    assert body["mosaic_tilematrixset"]
 
     response = app.get("/mosaicjson/info.geojson", params={"url": MOSAICJSON_FILE})
     assert response.status_code == 200
     assert response.headers["content-type"] == "application/geo+json"
     body = response.json()
     assert body["geometry"]
-    assert body["properties"]["minzoom"] == 7
-    assert body["properties"]["maxzoom"] == 9
     assert body["properties"]["name"] == "mosaic"  # mosaic.name is not set
     assert body["properties"]["quadkeys"] == []
+    assert body["properties"]["mosaic_minzoom"] == 7
+    assert body["properties"]["mosaic_maxzoom"] == 9
+    assert body["properties"]["mosaic_tilematrixset"]
 
 
 def test_tilejson(app):
@@ -90,7 +82,6 @@ def test_tilejson(app):
     assert body["minzoom"] == mosaicjson["minzoom"]
     assert body["maxzoom"] == mosaicjson["maxzoom"]
     assert body["bounds"] == mosaicjson["bounds"]
-    assert body["center"] == mosaicjson["center"]
 
 
 def test_point(app):

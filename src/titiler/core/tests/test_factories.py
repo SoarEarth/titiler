@@ -4,10 +4,11 @@ import json
 import os
 import pathlib
 import warnings
+import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from enum import Enum
 from io import BytesIO
-from typing import Dict, Optional, Type
+from typing import Dict, Optional, Sequence, Type
 from unittest.mock import patch
 from urllib.parse import urlencode
 
@@ -16,21 +17,23 @@ import httpx
 import morecantile
 import numpy
 import pytest
+from attrs import define
 from fastapi import Depends, FastAPI, HTTPException, Path, Query, security, status
 from morecantile.defaults import TileMatrixSets
 from rasterio.crs import CRS
 from rasterio.io import MemoryFile
 from rio_tiler.colormap import cmap as default_cmap
-from rio_tiler.errors import NoOverviewWarning
+from rio_tiler.errors import InvalidDatatypeWarning, NoOverviewWarning
 from rio_tiler.io import BaseReader, MultiBandReader, Reader, STACReader
 from starlette.requests import Request
 from starlette.testclient import TestClient
+from typing_extensions import Annotated
 
-from titiler.core.dependencies import RescaleType
+from titiler.core import dependencies
 from titiler.core.errors import DEFAULT_STATUS_CODES, add_exception_handlers
 from titiler.core.factory import (
     AlgorithmFactory,
-    BaseTilerFactory,
+    BaseFactory,
     ColorMapFactory,
     MultiBandTilerFactory,
     MultiBaseTilerFactory,
@@ -48,7 +51,7 @@ WEB_TMS = TileMatrixSets({"WebMercatorQuad": morecantile.tms.get("WebMercatorQua
 def test_TilerFactory():
     """Test TilerFactory class."""
     cog = TilerFactory()
-    assert len(cog.router.routes) == 27
+    assert len(cog.router.routes) == 22
     assert len(cog.supported_tms.list()) == NB_DEFAULT_TMS
 
     cog = TilerFactory(router_prefix="something", supported_tms=WEB_TMS)
@@ -75,7 +78,7 @@ def test_TilerFactory():
     assert response.status_code == 422
 
     cog = TilerFactory(add_preview=False, add_part=False, add_viewer=False)
-    assert len(cog.router.routes) == 18
+    assert len(cog.router.routes) == 13
 
     app = FastAPI()
     cog = TilerFactory()
@@ -209,10 +212,28 @@ def test_TilerFactory():
     assert response.status_code == 200
     assert response.headers["content-type"] == "image/png"
 
+    response = client.get(
+        f"/bbox/-56.228,72.715,-54.547,73.188/100x100.png?url={DATA_DIR}/cog.tif&rescale=0,1000"
+    )
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "image/png"
+    meta = parse_img(response.content)
+    assert meta["driver"] == "PNG"
+    assert meta["count"] == 2
+    assert meta["width"] == 100
+    assert meta["height"] == 100
+
     response = client.get(f"/point/-56.228,72.715?url={DATA_DIR}/cog.tif")
     assert response.status_code == 200
     assert response.headers["content-type"] == "application/json"
     assert len(response.json()["values"]) == 1
+    assert response.json()["band_names"] == ["b1"]
+
+    # Masked values
+    response = client.get(f"/point/-59.337,73.9898?url={DATA_DIR}/cog.tif&nodata=1")
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/json"
+    assert response.json()["values"] == [None]
     assert response.json()["band_names"] == ["b1"]
 
     response = client.get(
@@ -268,6 +289,19 @@ def test_TilerFactory():
     meta = parse_img(response.content)
     assert meta["driver"] == "WMTS"
     assert meta["crs"] == "EPSG:3857"
+    root = ET.fromstring(response.content)
+    assert root is not None
+
+    response = client.get(
+        f"/WebMercatorQuad/WMTSCapabilities.xml?url={DATA_DIR}/cog.tif&bdix=1&rescale=0,1000"
+    )
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/xml"
+    meta = parse_img(response.content)
+    assert meta["driver"] == "WMTS"
+    assert meta["crs"] == "EPSG:3857"
+    root = ET.fromstring(response.content)
+    assert root is not None
 
     response = client.get(
         f"/WorldCRS84Quad/WMTSCapabilities.xml?url={DATA_DIR}/cog.tif&minzoom=5&maxzoom=12"
@@ -277,11 +311,8 @@ def test_TilerFactory():
     meta = parse_img(response.content)
     assert meta["driver"] == "WMTS"
     assert str(meta["crs"]) == "OGC:CRS84"
-
-    response = client.get(f"/bounds?url={DATA_DIR}/cog.tif")
-    assert response.status_code == 200
-    assert response.headers["content-type"] == "application/json"
-    assert response.json()["bounds"]
+    root = ET.fromstring(response.content)
+    assert root is not None
 
     response = client.get(f"/info?url={DATA_DIR}/cog.tif")
     assert response.status_code == 200
@@ -292,6 +323,17 @@ def test_TilerFactory():
     assert response.status_code == 200
     assert response.headers["content-type"] == "application/geo+json"
     assert response.json()["type"] == "Feature"
+    assert "bbox" in response.json()
+    assert response.json()["geometry"]["type"] == "Polygon"
+
+    # BBOX crossing the Antimeridian
+    with pytest.warns(UserWarning):
+        response = client.get(f"/info.geojson?url={DATA_DIR}/cog_dateline.tif")
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/geo+json"
+    assert response.json()["type"] == "Feature"
+    assert "bbox" in response.json()
+    assert response.json()["geometry"]["type"] == "MultiPolygon"
 
     response = client.get(
         f"/preview.png?url={DATA_DIR}/cog.tif&rescale=0,1000&max_size=256"
@@ -310,14 +352,12 @@ def test_TilerFactory():
     assert meta["width"] == 512
     assert meta["height"] == 512
 
-    response = client.get(
-        f"/preview.png?url={DATA_DIR}/cog.tif&rescale=0,1000&max_size=0&nodata=0"
-    )
+    response = client.get(f"/preview/512x512.png?url={DATA_DIR}/cog.tif&rescale=0,1000")
     assert response.status_code == 200
     assert response.headers["content-type"] == "image/png"
     meta = parse_img(response.content)
-    assert meta["width"] == 2658
-    assert meta["height"] == 2667
+    assert meta["width"] == 512
+    assert meta["height"] == 512
 
     response = client.get(
         f"/preview.png?url={DATA_DIR}/cog.tif&rescale=0,1000&max_size=0&nodata=0"
@@ -373,6 +413,16 @@ def test_TilerFactory():
     assert response.status_code == 200
     assert response.headers["content-type"] == "image/png"
 
+    response = client.post(
+        f"/feature/100x100.png?url={DATA_DIR}/cog.tif&rescale=0,1000", json=feature
+    )
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "image/png"
+    meta = parse_img(response.content)
+    assert meta["driver"] == "PNG"
+    assert meta["width"] == 100
+    assert meta["height"] == 100
+
     response = client.post(f"/feature.tif?url={DATA_DIR}/cog.tif", json=feature)
     assert response.status_code == 200
     assert response.headers["content-type"] == "image/tiff; application=geotiff"
@@ -380,9 +430,10 @@ def test_TilerFactory():
     assert meta["dtype"] == "uint16"
     assert meta["count"] == 2
 
-    response = client.post(
-        f"/feature/100x100.jpeg?url={DATA_DIR}/cog.tif", json=feature
-    )
+    with pytest.warns(InvalidDatatypeWarning):
+        response = client.post(
+            f"/feature/100x100.jpeg?url={DATA_DIR}/cog.tif", json=feature
+        )
     assert response.status_code == 200
     assert response.headers["content-type"] == "image/jpeg"
     meta = parse_img(response.content)
@@ -700,6 +751,25 @@ def test_TilerFactory():
     assert meta["dtype"] == "uint8"
     assert meta["count"] == 3
 
+    # OGC Tileset
+    response = client.get(f"/tiles?url={DATA_DIR}/cog.tif")
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/json"
+    resp = response.json()
+    assert len(resp["tilesets"]) == NB_DEFAULT_TMS
+
+    first_tms = resp["tilesets"][0]
+    first_id = DEFAULT_TMS.list()[0]
+    assert first_id in first_tms["title"]
+    assert len(first_tms["links"]) == 2  # no link to the tms definition
+
+    response = client.get(f"/tiles/WebMercatorQuad?url={DATA_DIR}/cog.tif")
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/json"
+    resp = response.json()
+    # covers only 5 zoom levels
+    assert len(resp["tileMatrixSetLimits"]) == 5
+
 
 @patch("rio_tiler.io.rasterio.rasterio")
 def test_MultiBaseTilerFactory(rio):
@@ -707,7 +777,7 @@ def test_MultiBaseTilerFactory(rio):
     rio.open = mock_rasterio_open
 
     stac = MultiBaseTilerFactory(reader=STACReader)
-    assert len(stac.router.routes) == 29
+    assert len(stac.router.routes) == 24
 
     app = FastAPI()
     app.include_router(stac.router)
@@ -726,13 +796,11 @@ def test_MultiBaseTilerFactory(rio):
     assert response.status_code == 200
     assert len(response.json()) == 2
 
-    response = client.get(f"/bounds?url={DATA_DIR}/item.json")
-    assert response.status_code == 200
-    assert len(response.json()["bounds"]) == 4
-
-    response = client.get(f"/info?url={DATA_DIR}/item.json")
-    assert response.status_code == 200
-    assert len(response.json()) == 2
+    # no assets
+    with pytest.warns(UserWarning):
+        response = client.get(f"/info?url={DATA_DIR}/item.json")
+        assert response.status_code == 200
+        assert len(response.json()) == 2
 
     response = client.get(f"/info?url={DATA_DIR}/item.json&assets=B01&assets=B09")
     assert response.status_code == 200
@@ -1028,6 +1096,25 @@ def test_MultiBaseTilerFactory(rio):
     assert len(props) == 1
     assert "(B09 - B01) / (B09 + B01)" in props
 
+    # OGC Tileset
+    response = client.get(f"/tiles?url={DATA_DIR}/item.json")
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/json"
+    resp = response.json()
+    assert len(resp["tilesets"]) == NB_DEFAULT_TMS
+
+    first_tms = resp["tilesets"][0]
+    first_id = DEFAULT_TMS.list()[0]
+    assert first_id in first_tms["title"]
+    assert len(first_tms["links"]) == 2  # no link to the tms definition
+
+    response = client.get(f"/tiles/WebMercatorQuad?url={DATA_DIR}/item.json")
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/json"
+    resp = response.json()
+    # default minzoom/maxzoom are 0->24
+    assert len(resp["tileMatrixSetLimits"]) == 25
+
 
 @attr.s
 class BandFileReader(MultiBandReader):
@@ -1037,20 +1124,15 @@ class BandFileReader(MultiBandReader):
     tms: morecantile.TileMatrixSet = attr.ib(
         default=morecantile.tms.get("WebMercatorQuad")
     )
-    reader_options: Dict = attr.ib(factory=dict)
 
     reader: Type[BaseReader] = attr.ib(default=Reader)
+    reader_options: Dict = attr.ib(factory=dict)
 
-    minzoom: int = attr.ib()
-    maxzoom: int = attr.ib()
+    bands: Sequence[str] = attr.ib(init=False)
+    default_bands: Optional[Sequence[str]] = attr.ib(init=False, default=None)
 
-    @minzoom.default
-    def _minzoom(self):
-        return self.tms.minzoom
-
-    @maxzoom.default
-    def _maxzoom(self):
-        return self.tms.maxzoom
+    minzoom: int = attr.ib(init=False)
+    maxzoom: int = attr.ib(init=False)
 
     def __attrs_post_init__(self):
         """Parse Sceneid and get grid bounds."""
@@ -1060,6 +1142,9 @@ class BandFileReader(MultiBandReader):
             self.crs = cog.crs
             self.minzoom = cog.minzoom
             self.maxzoom = cog.maxzoom
+            self.width = cog.width
+            self.height = cog.height
+            self.transform = cog.transform
 
     def _get_band_url(self, band: str) -> str:
         """Validate band's name and return band's url."""
@@ -1077,7 +1162,7 @@ def test_MultiBandTilerFactory():
     bands = MultiBandTilerFactory(
         reader=BandFileReader, path_dependency=CustomPathParams
     )
-    assert len(bands.router.routes) == 28
+    assert len(bands.router.routes) == 23
 
     app = FastAPI()
     app.include_router(bands.router)
@@ -1097,7 +1182,9 @@ def test_MultiBandTilerFactory():
     assert response.json() == ["B01", "B09"]
 
     # default bands
-    response = client.get(f"/info?directory={DATA_DIR}")
+    # no bands
+    with pytest.warns(UserWarning):
+        response = client.get(f"/info?directory={DATA_DIR}")
     assert response.json()["band_metadata"] == [["B01", {}], ["B09", {}]]
 
     response = client.get(f"/info?directory={DATA_DIR}&bands=B01")
@@ -1371,6 +1458,25 @@ def test_MultiBandTilerFactory():
     assert props["B01"]
     assert props["B09"]
 
+    # OGC Tileset
+    response = client.get(f"/tiles?directory={DATA_DIR}")
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/json"
+    resp = response.json()
+    assert len(resp["tilesets"]) == NB_DEFAULT_TMS
+
+    first_tms = resp["tilesets"][0]
+    first_id = DEFAULT_TMS.list()[0]
+    assert first_id in first_tms["title"]
+    assert len(first_tms["links"]) == 2  # no link to the tms definition
+
+    response = client.get(f"/tiles/WebMercatorQuad?directory={DATA_DIR}")
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/json"
+    resp = response.json()
+    # 1 Zoom level (8)
+    assert len(resp["tileMatrixSetLimits"]) == 1
+
 
 def test_TMSFactory():
     """test TMSFactory."""
@@ -1441,7 +1547,7 @@ def test_TilerFactory_WithDependencies():
         route_dependencies=[
             (
                 [
-                    {"path": "/bounds", "method": "GET"},
+                    {"path": "/info", "method": "GET"},
                     {"path": "/tiles/{tileMatrixSetId}/{z}/{x}/{y}", "method": "GET"},
                 ],
                 [Depends(must_be_bob)],
@@ -1449,7 +1555,7 @@ def test_TilerFactory_WithDependencies():
         ],
         router_prefix="something",
     )
-    assert len(cog.router.routes) == 27
+    assert len(cog.router.routes) == 22
 
     app = FastAPI()
     app.include_router(cog.router, prefix="/something")
@@ -1465,14 +1571,10 @@ def test_TilerFactory_WithDependencies():
     assert response.headers["content-type"] == "application/json"
     assert response.json()["tilejson"]
 
-    response = client.get(
-        f"/something/bounds?url={DATA_DIR}/cog.tif&rescale=0,1000", auth=auth_bob
-    )
+    response = client.get(f"/something/info?url={DATA_DIR}/cog.tif", auth=auth_bob)
     assert response.status_code == 200
 
-    response = client.get(
-        f"/something/bounds?url={DATA_DIR}/cog.tif&rescale=0,1000", auth=auth_notbob
-    )
+    response = client.get(f"/something/info?url={DATA_DIR}/cog.tif", auth=auth_notbob)
     assert response.status_code == 401
     assert response.json()["detail"] == "You're not Bob"
 
@@ -1498,7 +1600,7 @@ def test_TilerFactory_WithDependencies():
 
     cog = TilerFactory(router_prefix="something")
     cog.add_route_dependencies(
-        scopes=[{"path": "/bounds", "method": "GET"}],
+        scopes=[{"path": "/info", "method": "GET"}],
         dependencies=[Depends(must_be_bob)],
     )
 
@@ -1513,14 +1615,10 @@ def test_TilerFactory_WithDependencies():
     assert response.headers["content-type"] == "application/json"
     assert response.json()["tilejson"]
 
-    response = client.get(
-        f"/something/bounds?url={DATA_DIR}/cog.tif&rescale=0,1000", auth=auth_bob
-    )
+    response = client.get(f"/something/info?url={DATA_DIR}/cog.tif", auth=auth_bob)
     assert response.status_code == 200
 
-    response = client.get(
-        f"/something/bounds?url={DATA_DIR}/cog.tif&rescale=0,1000", auth=auth_notbob
-    )
+    response = client.get(f"/something/info?url={DATA_DIR}/cog.tif", auth=auth_notbob)
     assert response.status_code == 401
     assert response.json()["detail"] == "You're not Bob"
 
@@ -1535,7 +1633,8 @@ def test_TilerFactory_WithGdalEnv():
     app.include_router(router)
     client = TestClient(app)
 
-    response = client.get(f"/info?url={DATA_DIR}/non_cog.tif")
+    with pytest.warns(NoOverviewWarning):
+        response = client.get(f"/info?url={DATA_DIR}/non_cog.tif")
     assert not response.json()["overviews"]
 
     router = TilerFactory(
@@ -1549,7 +1648,6 @@ def test_TilerFactory_WithGdalEnv():
     assert response.json()["overviews"]
 
     class ReaddirType(str, Enum):
-
         false = "false"
         true = "true"
         empty_dir = "empty_dir"
@@ -1589,17 +1687,34 @@ def test_algorithm():
 
     response = client.get("/algorithms")
     assert response.status_code == 200
-    assert "hillshade" in response.json()
+    algo_ids = [algo["id"] for algo in response.json()["algorithms"]]
+    assert "hillshade" in algo_ids
+
+    response = client.get("/algorithms", params={"f": "html"})
+    assert response.status_code == 200
+    assert "text/html" in response.headers["content-type"]
+
+    response = client.get("/algorithms", headers={"Accept": "text/html"})
+    assert response.status_code == 200
+    assert "text/html" in response.headers["content-type"]
 
     response = client.get("/algorithms/hillshade")
     assert response.status_code == 200
+
+    response = client.get("/algorithms/hillshade", params={"f": "html"})
+    assert response.status_code == 200
+    assert "text/html" in response.headers["content-type"]
+
+    response = client.get("/algorithms/hillshade", headers={"Accept": "text/html"})
+    assert response.status_code == 200
+    assert "text/html" in response.headers["content-type"]
 
 
 def test_path_param_in_prefix():
     """Test path params in prefix."""
 
-    @dataclass
-    class EndpointFactory(BaseTilerFactory):
+    @define
+    class EndpointFactory(BaseFactory):
         def register_routes(self):
             """register endpoints."""
 
@@ -1616,7 +1731,7 @@ def test_path_param_in_prefix():
                 return {"value": param2}
 
     app = FastAPI()
-    endpoints = EndpointFactory(reader=Reader, router_prefix="/prefixed/{param1}")
+    endpoints = EndpointFactory(router_prefix="/prefixed/{param1}")
     app.include_router(endpoints.router, prefix="/prefixed/{param1}")
     client = TestClient(app)
 
@@ -1669,11 +1784,34 @@ def test_AutoFormat_Colormap():
 def test_rescale_dependency():
     """Ensure that we can set default rescale values via the rescale_dependency"""
 
-    def custom_rescale_params() -> Optional[RescaleType]:
-        return [(0, 100)]
+    @dataclass
+    class ImageRenderingParams(dependencies.ImageRenderingParams):
+        """Custom ImageParams."""
+
+        def __post_init__(self):
+            if self.rescale:
+                rescale_array = []
+                for r in self.rescale:
+                    parsed = tuple(
+                        map(
+                            float,
+                            r.replace(" ", "")
+                            .replace("[", "")
+                            .replace("]", "")
+                            .split(","),
+                        )
+                    )
+                    assert (
+                        len(parsed) == 2
+                    ), f"Invalid rescale values: {self.rescale}, should be of form ['min,max', 'min,max'] or [[min,max], [min, max]]"
+                    rescale_array.append(parsed)
+
+                self.rescale = rescale_array  # Noqa
+            else:
+                self.rescale = [(0, 100)]
 
     cog = TilerFactory()
-    cog_custom_range = TilerFactory(rescale_dependency=custom_rescale_params)
+    cog_custom_range = TilerFactory(render_dependency=ImageRenderingParams)
 
     app = FastAPI()
     app.include_router(cog.router, prefix="/cog")
@@ -1751,13 +1889,20 @@ def test_dst_crs_option():
 def test_color_formula_dependency():
     """Ensure that we can set default color formulae via the color_formula_dependency"""
 
-    def custom_color_formula_params() -> Optional[str]:
-        return "sigmoidal R 7 0.4"
+    @dataclass
+    class ImageRenderingParams(dependencies.ImageRenderingParams):
+        """Custom ImageParams."""
+
+        color_formula: Annotated[
+            Optional[str],
+            Query(
+                title="Color Formula",
+                description="rio-color formula (info: https://github.com/mapbox/rio-color)",
+            ),
+        ] = "sigmoidal R 7 0.4"
 
     cog = TilerFactory()
-    cog_custom_color_formula = TilerFactory(
-        color_formula_dependency=custom_color_formula_params
-    )
+    cog_custom_color_formula = TilerFactory(render_dependency=ImageRenderingParams)
 
     app = FastAPI()
     app.include_router(cog.router, prefix="/cog")
@@ -1807,13 +1952,22 @@ def test_colormap_factory():
 
     response = client.get("/colorMaps")
     assert response.status_code == 200
-    assert "cust" in response.json()["colorMaps"]
-    assert "negative" in response.json()["colorMaps"]
-    assert "seq" in response.json()["colorMaps"]
-    assert "viridis" in response.json()["colorMaps"]
+    cmap_ids = [cm["id"] for cm in response.json()["colormaps"]]
+    assert "cust" in cmap_ids
+    assert "negative" in cmap_ids
+    assert "seq" in cmap_ids
+    assert "viridis" in cmap_ids
+
+    response = client.get("/colorMaps", headers={"Accept": "text/html"})
+    assert response.status_code == 200
+    assert "text/html" in response.headers["content-type"]
 
     response = client.get("/colorMaps/viridis")
     assert response.status_code == 200
+
+    response = client.get("/colorMaps/viridis", headers={"Accept": "text/html"})
+    assert response.status_code == 200
+    assert "text/html" in response.headers["content-type"]
 
     response = client.get("/colorMaps/cust")
     assert response.status_code == 200
@@ -1827,7 +1981,7 @@ def test_colormap_factory():
     response = client.get("/colorMaps/yo")
     assert response.status_code == 422
 
-    response = client.get("/colorMaps/viridis", params={"format": "png"})
+    response = client.get("/colorMaps/viridis", params={"f": "png"})
     assert response.status_code == 200
     meta = parse_img(response.content)
     assert meta["dtype"] == "uint8"
@@ -1836,7 +1990,7 @@ def test_colormap_factory():
     assert meta["height"] == 20
 
     response = client.get(
-        "/colorMaps/viridis", params={"format": "png", "orientation": "vertical"}
+        "/colorMaps/viridis", params={"f": "png", "orientation": "vertical"}
     )
     assert response.status_code == 200
     meta = parse_img(response.content)
@@ -1846,7 +2000,7 @@ def test_colormap_factory():
     assert meta["height"] == 256
 
     response = client.get(
-        "/colorMaps/viridis", params={"format": "png", "width": 1000, "height": 100}
+        "/colorMaps/viridis", params={"f": "png", "width": 1000, "height": 100}
     )
     assert response.status_code == 200
     meta = parse_img(response.content)
@@ -1855,7 +2009,7 @@ def test_colormap_factory():
     assert meta["width"] == 1000
     assert meta["height"] == 100
 
-    response = client.get("/colorMaps/cust", params={"format": "png"})
+    response = client.get("/colorMaps/cust", params={"f": "png"})
     assert response.status_code == 200
     meta = parse_img(response.content)
     assert meta["dtype"] == "uint8"
@@ -1864,7 +2018,7 @@ def test_colormap_factory():
     assert meta["height"] == 20
 
     response = client.get(
-        "/colorMaps/cust", params={"format": "png", "orientation": "vertical"}
+        "/colorMaps/cust", params={"f": "png", "orientation": "vertical"}
     )
     assert response.status_code == 200
     meta = parse_img(response.content)
@@ -1873,7 +2027,7 @@ def test_colormap_factory():
     assert meta["width"] == 20
     assert meta["height"] == 256
 
-    response = client.get("/colorMaps/negative", params={"format": "png"})
+    response = client.get("/colorMaps/negative", params={"f": "png"})
     assert response.status_code == 200
     meta = parse_img(response.content)
     assert meta["dtype"] == "uint8"
@@ -1882,7 +2036,7 @@ def test_colormap_factory():
     assert meta["height"] == 20
 
     response = client.get(
-        "/colorMaps/negative", params={"format": "png", "orientation": "vertical"}
+        "/colorMaps/negative", params={"f": "png", "orientation": "vertical"}
     )
     assert response.status_code == 200
     meta = parse_img(response.content)
@@ -1891,7 +2045,7 @@ def test_colormap_factory():
     assert meta["width"] == 20
     assert meta["height"] == 256
 
-    response = client.get("/colorMaps/seq", params={"format": "png"})
+    response = client.get("/colorMaps/seq", params={"f": "png"})
     assert response.status_code == 200
     meta = parse_img(response.content)
     assert meta["dtype"] == "uint8"
@@ -1900,7 +2054,7 @@ def test_colormap_factory():
     assert meta["height"] == 20
 
     response = client.get(
-        "/colorMaps/seq", params={"format": "png", "orientation": "vertical"}
+        "/colorMaps/seq", params={"f": "png", "orientation": "vertical"}
     )
     assert response.status_code == 200
     meta = parse_img(response.content)
@@ -1908,3 +2062,179 @@ def test_colormap_factory():
     assert meta["count"] == 4
     assert meta["width"] == 20
     assert meta["height"] == 256
+
+
+def test_ogc_maps_cog():
+    """Test TilerFactory class."""
+    cog_path = f"{DATA_DIR}/cog.tif"
+
+    cog = TilerFactory(add_ogc_maps=True)
+    assert len(cog.router.routes) == 23
+
+    assert "https://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/core" in cog.conforms_to
+
+    app = FastAPI()
+    app.include_router(cog.router)
+    with TestClient(app) as client:
+        # Conformance Class “Core”
+        response = client.get(
+            "/map",
+            params={
+                "url": cog_path,
+            },
+        )
+        assert response.status_code == 200
+        headers = response.headers
+        assert (
+            headers["Content-Bbox"]
+            == "373185.0,8019284.949381611,639014.9492102272,8286015.0"
+        )
+        assert headers["Content-Crs"] == "<http://www.opengis.net/def/crs/EPSG/0/32621>"
+        assert headers["content-type"] == "image/png"
+        meta = parse_img(response.content)
+        assert meta["width"] == 1021
+        assert meta["height"] == 1024  # default max size
+
+        response = client.get(
+            "/map",
+            params={
+                "url": cog_path,
+            },
+            headers={"Accept": "image/jpeg"},
+        )
+        assert response.status_code == 200
+        headers = response.headers
+        assert "Content-Bbox" in headers
+        assert "Content-Crs" in headers
+        assert headers["content-type"] == "image/jpeg"
+        meta = parse_img(response.content)
+        assert not meta["crs"]
+
+        response = client.get("/map", params={"url": cog_path, "f": "tif"})
+        assert response.status_code == 200
+        headers = response.headers
+        assert "Content-Bbox" in headers
+        assert "Content-Crs" in headers
+        assert headers["content-type"] == "image/tiff; application=geotiff"
+        meta = parse_img(response.content)
+        assert meta["crs"]
+
+        response = client.get("/map", params={"url": cog_path, "f": "tiff"})
+        assert response.status_code == 200
+        headers = response.headers
+        assert "Content-Bbox" in headers
+        assert "Content-Crs" in headers
+        assert headers["content-type"] == "image/tiff; application=geotiff"
+        meta = parse_img(response.content)
+        assert meta["crs"]
+
+        # Conformance Class “Scaling”
+        # /req/scaling/width-definition
+        response = client.get(
+            "/map",
+            params={
+                "url": cog_path,
+                "width": 256,
+            },
+        )
+        assert response.status_code == 200
+        meta = parse_img(response.content)
+        assert meta["width"] == 256
+        assert meta["height"] == 257
+
+        response = client.get(
+            "/map",
+            params={
+                "url": cog_path,
+                "width": -256,
+            },
+        )
+        assert response.status_code == 422
+
+        # /req/scaling/height-definition
+        response = client.get(
+            "/map",
+            params={
+                "url": cog_path,
+                "height": 256,
+            },
+        )
+        assert response.status_code == 200
+        meta = parse_img(response.content)
+        assert meta["height"] == 256
+
+        response = client.get(
+            "/map",
+            params={
+                "url": cog_path,
+                "height": -256,
+            },
+        )
+        assert response.status_code == 422
+
+        # Conformance Class “Spatial Subsetting”
+        # /conf/spatial-subsetting/bbox-crs
+        response = client.get(
+            "/map",
+            params={
+                "url": cog_path,
+                "bbox": "-56.228,72.715,-54.547,73.188",
+            },
+        )
+        headers = response.headers
+        assert headers["Content-Crs"] == "<http://www.opengis.net/def/crs/EPSG/0/32621>"
+        assert (
+            headers["Content-Bbox"]
+            == "524922.2217886819,8068852.367048624,581330.6416587981,8123074.564952523"
+        )
+        assert headers["content-type"] == "image/png"
+        meta = parse_img(response.content)
+
+        response = client.get(
+            "/map",
+            params={
+                "url": cog_path,
+                "bbox": "-56.228,72.715,-54.547,73.188",
+                "bbox-crs": "http://www.opengis.net/def/crs/OGC/0/CRS84",
+            },
+        )
+        headers = response.headers
+        assert headers["Content-Crs"] == "<http://www.opengis.net/def/crs/EPSG/0/32621>"
+        assert (
+            headers["Content-Bbox"]
+            == "524922.2217886819,8068852.367048624,581330.6416587981,8123074.564952523"
+        )
+        assert headers["content-type"] == "image/png"
+
+        response = client.get(
+            "/map",
+            params={
+                "url": cog_path,
+                "bbox": "-6259272.328324187,12015838.020930404,-6072144.264300693,12195445.265479913",
+                "bbox-crs": "[EPSG:3857]",
+            },
+        )
+        assert response.status_code == 200
+        headers = response.headers
+        assert headers["Content-Crs"] == "<http://www.opengis.net/def/crs/EPSG/0/32621>"
+        assert (
+            headers["Content-Bbox"]
+            == "524922.2217886819,8068852.367048624,581330.6416587983,8123074.564952523"
+        )
+        assert headers["content-type"] == "image/png"
+
+        # Abstract Test for Requirement crs parameter definition
+        response = client.get(
+            "/map",
+            params={
+                "url": cog_path,
+                "bbox": "-6259272.328324187,12015838.020930404,-6072144.264300693,12195445.265479913",
+                "bbox-crs": "[EPSG:3857]",
+                "crs": "[EPSG:4326]",
+            },
+        )
+        assert response.status_code == 200
+        headers = response.headers
+        assert headers["Content-Crs"] == "<http://www.opengis.net/def/crs/EPSG/0/4326>"
+        assert headers["Content-Bbox"] == "-56.228,72.715,-54.54699999999999,73.188"
+        assert headers["content-type"] == "image/png"

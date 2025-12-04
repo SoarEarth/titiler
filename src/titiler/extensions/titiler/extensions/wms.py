@@ -1,6 +1,6 @@
 """wms Extension."""
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Dict, List, Optional, Set, Tuple
 from urllib.parse import urlencode
@@ -8,8 +8,10 @@ from urllib.parse import urlencode
 import jinja2
 import numpy
 import rasterio
+from attrs import define, field
 from fastapi import Depends, HTTPException
 from rasterio.crs import CRS
+from rio_tiler.constants import WGS84_CRS
 from rio_tiler.models import ImageData
 from rio_tiler.mosaic import mosaic_reader
 from rio_tiler.mosaic.methods.base import MosaicMethodBase
@@ -17,13 +19,13 @@ from starlette.requests import Request
 from starlette.responses import Response
 from starlette.templating import Jinja2Templates
 
-from titiler.core.dependencies import ColorFormulaParams, RescalingParams
-from titiler.core.factory import BaseTilerFactory, FactoryExtension
+from titiler.core.dependencies import RenderingParams
+from titiler.core.factory import FactoryExtension, TilerFactory
 from titiler.core.resources.enums import ImageType, MediaType
-from titiler.core.utils import render_image
 
 jinja2_env = jinja2.Environment(
-    loader=jinja2.ChoiceLoader([jinja2.PackageLoader(__package__, "templates")])
+    autoescape=jinja2.select_autoescape(["xml"]),
+    loader=jinja2.ChoiceLoader([jinja2.PackageLoader(__package__, "templates")]),
 )
 DEFAULT_TEMPLATES = Jinja2Templates(env=jinja2_env)
 
@@ -56,13 +58,13 @@ class OverlayMethod(MosaicMethodBase):
             self.mosaic.mask = mask
 
 
-@dataclass
+@define
 class wmsExtension(FactoryExtension):
     """Add /wms endpoint to a TilerFactory."""
 
-    supported_crs: List[str] = field(default_factory=lambda: ["EPSG:4326"])
+    supported_crs: List[str] = field(default=["EPSG:4326"])
     supported_format: List[str] = field(
-        default_factory=lambda: [
+        default=[
             "image/png",
             "image/jpeg",
             "image/jpg",
@@ -71,12 +73,10 @@ class wmsExtension(FactoryExtension):
             "image/tiff; application=geotiff",
         ]
     )
-    supported_version: List[str] = field(
-        default_factory=lambda: ["1.0.0", "1.1.1", "1.3.0"]
-    )
+    supported_version: List[str] = field(default=["1.0.0", "1.1.1", "1.3.0"])
     templates: Jinja2Templates = DEFAULT_TEMPLATES
 
-    def register(self, factory: BaseTilerFactory):  # noqa: C901
+    def register(self, factory: TilerFactory):  # noqa: C901
         """Register endpoint to the tiler factory."""
 
         @factory.router.get(
@@ -96,6 +96,7 @@ class wmsExtension(FactoryExtension):
                     },
                 },
             },
+            operation_id=f"{factory.operation_prefix}getWMS",
             openapi_extra={
                 "parameters": [
                     {
@@ -284,13 +285,12 @@ class wmsExtension(FactoryExtension):
         def wms(  # noqa: C901
             request: Request,
             # vendor (titiler) parameters
+            reader_params=Depends(factory.reader_dependency),
             layer_params=Depends(factory.layer_dependency),
             dataset_params=Depends(factory.dataset_dependency),
             post_process=Depends(factory.process_dependency),
-            rescale=Depends(RescalingParams),
-            color_formula=Depends(ColorFormulaParams),
             colormap=Depends(factory.colormap_dependency),
-            reader_params=Depends(factory.reader_dependency),
+            render_params=Depends(RenderingParams),
             env=Depends(factory.environment_dependency),
         ):
             """Return a WMS query for a single COG.
@@ -375,15 +375,17 @@ class wmsExtension(FactoryExtension):
                 for layer in layers:
                     layers_dict[layer] = {}
                     with rasterio.Env(**env):
-                        with factory.reader(layer, **reader_params) as src_dst:
+                        with factory.reader(
+                            layer, **reader_params.as_dict()
+                        ) as src_dst:
                             layers_dict[layer]["srs"] = f"EPSG:{src_dst.crs.to_epsg()}"
                             layers_dict[layer]["bounds"] = src_dst.bounds
-                            layers_dict[layer][
-                                "bounds_wgs84"
-                            ] = src_dst.geographic_bounds
-                            layers_dict[layer][
-                                "abstract"
-                            ] = src_dst.info().model_dump_json()
+                            layers_dict[layer]["bounds_wgs84"] = (
+                                src_dst.get_geographic_bounds(WGS84_CRS)
+                            )
+                            layers_dict[layer]["abstract"] = (
+                                src_dst.info().model_dump_json()
+                            )
 
                 # Build information for the whole service
                 minx, miny, maxx, maxy = zip(
@@ -504,15 +506,17 @@ class wmsExtension(FactoryExtension):
 
                 def _reader(src_path: str):
                     with rasterio.Env(**env):
-                        with factory.reader(src_path, **reader_params) as src_dst:
+                        with factory.reader(
+                            src_path, **reader_params.as_dict()
+                        ) as src_dst:
                             return src_dst.part(
                                 bbox,
                                 width=width,
                                 height=height,
                                 dst_crs=crs,
                                 bounds_crs=crs,
-                                **layer_params,
-                                **dataset_params,
+                                **layer_params.as_dict(),
+                                **dataset_params.as_dict(),
                             )
 
                 image, assets_used = mosaic_reader(
@@ -539,20 +543,12 @@ class wmsExtension(FactoryExtension):
                 if post_process:
                     image = post_process(image)
 
-                if rescale:
-                    image.rescale(rescale)
-
-                if color_formula:
-                    image.apply_color_formula(color_formula)
-
-                if colormap:
-                    image = image.apply_colormap(colormap)
-
-                content, media_type = render_image(
+                content, media_type = factory.render_func(
                     image,
                     output_format=format,
                     colormap=colormap,
                     add_mask=transparent,
+                    **render_params.as_dict(),
                 )
                 return Response(content, media_type=media_type)
 

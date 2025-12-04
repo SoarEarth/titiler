@@ -5,21 +5,28 @@ import tempfile
 from contextlib import contextmanager
 from dataclasses import dataclass
 from io import BytesIO
+from typing import Annotated, List, Optional
+from unittest.mock import patch
 
+import attr
+import morecantile
 import numpy
 from cogeo_mosaic.backends import FileBackend
 from cogeo_mosaic.mosaic import MosaicJSON
-from fastapi import FastAPI
+from fastapi import FastAPI, Query
 from rio_tiler.mosaic.methods import PixelSelectionMethod
 from starlette.testclient import TestClient
 
 from titiler.core.dependencies import DefaultDependency
 from titiler.core.resources.enums import OptionalHeader
+from titiler.mosaic.extensions import MosaicJSONExtension
 from titiler.mosaic.factory import MosaicTilerFactory
 
 from .conftest import DATA_DIR
 
 assets = [os.path.join(DATA_DIR, asset) for asset in ["cog1.tif", "cog2.tif"]]
+DEFAULT_TMS = morecantile.tms
+NB_DEFAULT_TMS = len(DEFAULT_TMS.list())
 
 
 @contextmanager
@@ -43,7 +50,16 @@ def test_MosaicTilerFactory():
         optional_headers=[OptionalHeader.x_assets],
         router_prefix="mosaic",
     )
-    assert len(mosaic.router.routes) == 24
+    assert len(mosaic.router.routes) == 15
+
+    mosaic = MosaicTilerFactory(
+        optional_headers=[OptionalHeader.x_assets],
+        extensions=[
+            MosaicJSONExtension(),
+        ],
+        router_prefix="mosaic",
+    )
+    assert len(mosaic.router.routes) == 17
 
     app = FastAPI()
     app.include_router(mosaic.router, prefix="/mosaic")
@@ -71,13 +87,6 @@ def test_MosaicTilerFactory():
         assert response.json()["mosaicjson"]
 
         response = client.get(
-            "/mosaic/bounds",
-            params={"url": mosaic_file},
-        )
-        assert response.status_code == 200
-        assert response.json()["bounds"]
-
-        response = client.get(
             "/mosaic/info",
             params={"url": mosaic_file},
         )
@@ -97,16 +106,31 @@ def test_MosaicTilerFactory():
             params={"url": mosaic_file},
         )
         assert response.status_code == 200
+        assert response.json()["coordinates"]
+        v = response.json()["values"]
+        assert len(v) == 1
+        values = v[0][1]
+        assert len(values) == 3
+        assert values[0]
+
+        # Masked values
+        response = client.get(
+            "/mosaic/point/-75.759,46.3847",
+            params={"url": mosaic_file},
+        )
+        assert response.status_code == 200
+        assert response.json()["coordinates"]
+        v = response.json()["values"]
+        assert len(v) == 1
+        values = v[0][1]
+        assert len(values) == 3
+        assert values[0] is None
 
         response = client.get(
             "/mosaic/point/-7903683.846322423,5780349.220256353",
             params={"url": mosaic_file, "coord_crs": "epsg:3857"},
         )
         assert response.status_code == 200
-
-        response = client.get("/mosaic/tiles/7/37/45", params={"url": mosaic_file})
-        assert response.status_code == 200
-        assert response.headers["X-Assets"]
 
         response = client.get(
             "/mosaic/tiles/WebMercatorQuad/7/37/45", params={"url": mosaic_file}
@@ -122,7 +146,8 @@ def test_MosaicTilerFactory():
 
         # Buffer
         response = client.get(
-            "/mosaic/tiles/7/37/45.npy", params={"url": mosaic_file, "buffer": 10}
+            "/mosaic/tiles/WebMercatorQuad/7/37/45.npy",
+            params={"url": mosaic_file, "buffer": 10},
         )
         assert response.status_code == 200
         assert response.headers["content-type"] == "application/x-binary"
@@ -130,7 +155,7 @@ def test_MosaicTilerFactory():
         assert npy_tile.shape == (4, 276, 276)  # mask + data
 
         response = client.get(
-            "/mosaic/tilejson.json",
+            "/mosaic/WebMercatorQuad/tilejson.json",
             params={
                 "url": mosaic_file,
                 "tile_format": "png",
@@ -148,7 +173,7 @@ def test_MosaicTilerFactory():
         assert body["maxzoom"] == 9
 
         response = client.get(
-            "/mosaic/tilejson.json",
+            "/mosaic/WebMercatorQuad/tilejson.json",
             params={
                 "url": mosaic_file,
                 "tile_format": "png",
@@ -168,7 +193,7 @@ def test_MosaicTilerFactory():
         assert "tileMatrixSetId" not in body["tiles"][0]
 
         response = client.get(
-            "/mosaic/WMTSCapabilities.xml",
+            "/mosaic/WebMercatorQuad/WMTSCapabilities.xml",
             params={
                 "url": mosaic_file,
                 "tile_format": "png",
@@ -186,7 +211,7 @@ def test_MosaicTilerFactory():
         assert response.status_code == 200
 
         response = client.get(
-            "/mosaic/7/36/45/assets",
+            "/mosaic/tiles/WebMercatorQuad/7/36/45/assets",
             params={"url": mosaic_file},
         )
         assert response.status_code == 200
@@ -195,34 +220,7 @@ def test_MosaicTilerFactory():
         )
 
         response = client.get(
-            "/mosaic/WGS1984Quad/8/148/61/assets",
-            params={"url": mosaic_file},
-        )
-        assert response.status_code == 200
-        assert all(
-            filepath.split("/")[-1] in ["cog1.tif", "cog2.tif"]
-            for filepath in response.json()
-        )
-
-        response = client.get("/mosaic/-71,46/assets", params={"url": mosaic_file})
-        assert response.status_code == 200
-        assert all(
-            filepath.split("/")[-1] in ["cog1.tif", "cog2.tif"]
-            for filepath in response.json()
-        )
-
-        response = client.get(
-            "/mosaic/-7903683.846322423,5780349.220256353/assets",
-            params={"url": mosaic_file, "coord_crs": "epsg:3857"},
-        )
-        assert response.status_code == 200
-        assert all(
-            filepath.split("/")[-1] in ["cog1.tif", "cog2.tif"]
-            for filepath in response.json()
-        )
-
-        response = client.get(
-            "/mosaic/-75.9375,43.06888777416962,-73.125,45.089035564831015/assets",
+            "/mosaic/tiles/WGS1984Quad/8/148/61/assets",
             params={"url": mosaic_file},
         )
         assert response.status_code == 200
@@ -232,7 +230,16 @@ def test_MosaicTilerFactory():
         )
 
         response = client.get(
-            "/mosaic/-8453323.83211421,5322463.153553393,-8140237.76425813,5635549.221409473/assets",
+            "/mosaic/point/-71,46/assets", params={"url": mosaic_file}
+        )
+        assert response.status_code == 200
+        assert all(
+            filepath.split("/")[-1] in ["cog1.tif", "cog2.tif"]
+            for filepath in response.json()
+        )
+
+        response = client.get(
+            "/mosaic/point/-7903683.846322423,5780349.220256353/assets",
             params={"url": mosaic_file, "coord_crs": "epsg:3857"},
         )
         assert response.status_code == 200
@@ -242,11 +249,50 @@ def test_MosaicTilerFactory():
         )
 
         response = client.get(
-            "/mosaic/10,10,11,11/assets",
+            "/mosaic/bbox/-75.9375,43.06888777416962,-73.125,45.089035564831015/assets",
+            params={"url": mosaic_file},
+        )
+        assert response.status_code == 200
+        assert all(
+            filepath.split("/")[-1] in ["cog1.tif", "cog2.tif"]
+            for filepath in response.json()
+        )
+
+        response = client.get(
+            "/mosaic/bbox/-8453323.83211421,5322463.153553393,-8140237.76425813,5635549.221409473/assets",
+            params={"url": mosaic_file, "coord_crs": "epsg:3857"},
+        )
+        assert response.status_code == 200
+        assert all(
+            filepath.split("/")[-1] in ["cog1.tif", "cog2.tif"]
+            for filepath in response.json()
+        )
+
+        response = client.get(
+            "/mosaic/bbox/10,10,11,11/assets",
             params={"url": mosaic_file},
         )
         assert response.status_code == 200
         assert response.json() == []
+
+        # OGC Tileset
+        response = client.get(f"/mosaic/tiles?url={mosaic_file}")
+        assert response.status_code == 200
+        assert response.headers["content-type"] == "application/json"
+        resp = response.json()
+        assert len(resp["tilesets"]) == NB_DEFAULT_TMS
+
+        first_tms = resp["tilesets"][0]
+        first_id = DEFAULT_TMS.list()[0]
+        assert first_id in first_tms["title"]
+        assert len(first_tms["links"]) == 2  # no link to the tms definition
+
+        response = client.get(f"/mosaic/tiles/WebMercatorQuad?url={mosaic_file}")
+        assert response.status_code == 200
+        assert response.headers["content-type"] == "application/json"
+        resp = response.json()
+        # covers only 3 zoom levels
+        assert len(resp["tileMatrixSetLimits"]) == 3
 
 
 @dataclass
@@ -260,7 +306,7 @@ class BackendParams(DefaultDependency):
 def test_MosaicTilerFactory_BackendParams():
     """Test MosaicTilerFactory factory with Backend dependency."""
     mosaic = MosaicTilerFactory(
-        reader=FileBackend,
+        backend=FileBackend,
         backend_dependency=BackendParams,
         router_prefix="/mosaic",
     )
@@ -270,7 +316,7 @@ def test_MosaicTilerFactory_BackendParams():
 
     with tmpmosaic() as mosaic_file:
         response = client.get(
-            "/mosaic/tilejson.json",
+            "/mosaic/WebMercatorQuad/tilejson.json",
             params={"url": mosaic_file},
         )
         assert response.json()["minzoom"] == 4
@@ -297,14 +343,17 @@ def test_MosaicTilerFactory_PixelSelectionParams():
     client = TestClient(app)
 
     with tmpmosaic() as mosaic_file:
-        response = client.get("/mosaic/tiles/7/37/45.npy", params={"url": mosaic_file})
+        response = client.get(
+            "/mosaic/tiles/WebMercatorQuad/7/37/45.npy", params={"url": mosaic_file}
+        )
         assert response.status_code == 200
         assert response.headers["content-type"] == "application/x-binary"
         npy_tile = numpy.load(BytesIO(response.content))
         assert npy_tile.shape == (4, 256, 256)  # mask + data
 
         response = client.get(
-            "/mosaic_highest/tiles/7/37/45.npy", params={"url": mosaic_file}
+            "/mosaic_highest/tiles/WebMercatorQuad/7/37/45.npy",
+            params={"url": mosaic_file},
         )
         assert response.status_code == 200
         assert response.headers["content-type"] == "application/x-binary"
@@ -314,23 +363,78 @@ def test_MosaicTilerFactory_PixelSelectionParams():
         assert (npy_tile != npy_tile_highest).any()
 
 
-def test_MosaicTilerFactory_strict_zoom(monkeypatch):
+@patch("titiler.mosaic.factory.MOSAIC_STRICT_ZOOM", new=True)
+def test_MosaicTilerFactory_strict_zoom():
     """Test MosaicTilerFactory factory with STRICT Zoom Mode"""
-    monkeypatch.setenv("MOSAIC_STRICT_ZOOM", "TRUE")
-
     mosaic = MosaicTilerFactory()
     app = FastAPI()
     app.include_router(mosaic.router)
 
     with TestClient(app) as client:
         with tmpmosaic() as mosaic_file:
-            response = client.get("/tiles/7/37/45.png", params={"url": mosaic_file})
+            response = client.get(
+                "/tiles/WebMercatorQuad/7/37/45.png", params={"url": mosaic_file}
+            )
             assert response.status_code == 200
 
-            response = client.get("/tiles/6/18/22.png", params={"url": mosaic_file})
+            response = client.get(
+                "/tiles/WebMercatorQuad/6/18/22.png", params={"url": mosaic_file}
+            )
             assert response.status_code == 400
             assert "Invalid ZOOM level 6" in response.text
 
-            response = client.get("/tiles/11/594/734.png", params={"url": mosaic_file})
+            response = client.get(
+                "/tiles/WebMercatorQuad/11/594/734.png", params={"url": mosaic_file}
+            )
             assert response.status_code == 400
             assert "Invalid ZOOM level 11" in response.text
+
+
+@dataclass
+class AssetsAccessParams(DefaultDependency):
+    """Backend options to overwrite min/max zoom."""
+
+    limit: Annotated[int, Query()] = 10
+
+
+@attr.s
+class CustomBackend(FileBackend):
+    """Custom FileBackend."""
+
+    def get_assets(
+        self, x: int, y: int, z: int, limit: Optional[int] = None
+    ) -> List[str]:
+        """Find assets."""
+        assets = super().get_assets(x, y, z)
+
+        if limit and len(assets) > limit:
+            return assets[:limit]
+
+        return assets
+
+
+def test_MosaicTilerFactory_asset_accessor():
+    """Test MosaicTilerFactory factory with Backend dependency."""
+    mosaic = MosaicTilerFactory(
+        backend=CustomBackend,
+        router_prefix="/mosaic",
+        assets_accessor_dependency=AssetsAccessParams,
+    )
+    app = FastAPI()
+    app.include_router(mosaic.router, prefix="/mosaic")
+    client = TestClient(app)
+
+    with tmpmosaic() as mosaic_file:
+        response = client.get(
+            "/mosaic/tiles/WGS1984Quad/8/148/61/assets",
+            params={"url": mosaic_file},
+        )
+        assert response.status_code == 200
+        assert len(response.json()) == 2
+
+        response = client.get(
+            "/mosaic/tiles/WGS1984Quad/8/148/61/assets",
+            params={"url": mosaic_file, "limit": 1},
+        )
+        assert response.status_code == 200
+        assert len(response.json()) == 1

@@ -2,14 +2,13 @@
 
 import json
 from dataclasses import dataclass
-from typing import Literal
+from typing import Annotated, Literal, Optional
 
 import pytest
 from fastapi import Depends, FastAPI, Path
 from morecantile import tms
 from rio_tiler.types import ColorMapType
 from starlette.testclient import TestClient
-from typing_extensions import Annotated
 
 from titiler.core import dependencies, errors
 from titiler.core.resources.responses import JSONResponse
@@ -147,11 +146,11 @@ def test_default():
 
     @dataclass
     class dep(dependencies.DefaultDependency):
+        v: Optional[int] = None
 
-        v: int
-
-    # make sure we can unpack the class
-    assert dict(**dep(v=1)) == {"v": 1}
+    assert dep(v=1).as_dict() == {"v": 1}
+    assert dep().as_dict() == {}
+    assert dep().as_dict(exclude_none=False) == {"v": None}
     assert dep(v=1).v == 1
 
 
@@ -351,11 +350,13 @@ def test_preview_part_params():
     app = FastAPI()
 
     @app.get("/preview")
+    @app.get("/preview/{width}x{height}")
     def _endpoint(params=Depends(dependencies.PreviewParams)):
         """return params."""
         return params
 
     @app.get("/part")
+    @app.get("/part/{width}x{height}")
     def _endpoint(params=Depends(dependencies.PartFeatureParams)):
         """return params."""
         return params
@@ -372,8 +373,13 @@ def test_preview_part_params():
     assert not response.json()["width"]
 
     response = client.get("/preview?width=128")
-    assert response.json()["max_size"] == 1024
+    assert not response.json()["max_size"]
     assert not response.json()["height"]
+    assert response.json()["width"] == 128
+
+    response = client.get("/preview/128x128")
+    assert not response.json()["max_size"]
+    assert response.json()["height"] == 128
     assert response.json()["width"] == 128
 
     response = client.get("/preview?width=128&height=128")
@@ -401,6 +407,11 @@ def test_preview_part_params():
     assert response.json()["height"] == 128
     assert response.json()["width"] == 128
 
+    response = client.get("/part/128x128")
+    assert not response.json()["max_size"]
+    assert response.json()["height"] == 128
+    assert response.json()["width"] == 128
+
 
 def test_dataset():
     """test dataset deps."""
@@ -421,7 +432,7 @@ def test_dataset():
     response = client.get("/")
     assert not response.json()["nodata"]
     assert not response.json()["unscale"]
-    assert response.json()["resampling_method"] == "nearest"
+    assert not response.json()["resampling_method"]
 
     response = client.get("/?resampling=cubic")
     assert not response.json()["nodata"]
@@ -447,7 +458,7 @@ def test_render():
 
     client = TestClient(app)
     response = client.get("/")
-    assert response.json()["add_mask"] is True
+    assert not response.json()["add_mask"]
 
     response = client.get("/?return_mask=False")
     assert response.json()["add_mask"] is False
@@ -480,7 +491,7 @@ def test_algo():
     assert response.status_code == 422
 
     response = client.get("/?algorithm=hillshade")
-    assert response.json()["azimuth"] == 90
+    assert response.json()["azimuth"] == 45
     assert response.json()["buffer"] == 3
     assert response.json()["input_nbands"] == 1
 
@@ -501,9 +512,9 @@ def test_rescale_params():
     app = FastAPI()
 
     @app.get("/")
-    def main(rescale=Depends(dependencies.RescalingParams)):
+    def main(params=Depends(dependencies.ImageRenderingParams)):
         """return rescale."""
-        return rescale
+        return params.rescale
 
     client = TestClient(app)
 

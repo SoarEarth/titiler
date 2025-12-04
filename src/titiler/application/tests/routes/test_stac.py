@@ -1,23 +1,12 @@
-"""test /COG endpoints."""
-
+"""test /stac endpoints."""
 
 from typing import Dict
 from unittest.mock import patch
 
+import pytest
 from rasterio.io import MemoryFile
 
 from ..conftest import mock_rasterio_open, mock_RequestGet
-
-
-@patch("rio_tiler.io.stac.httpx")
-def test_bounds(httpx, app):
-    """test /bounds endpoint."""
-    httpx.get = mock_RequestGet
-
-    response = app.get("/stac/bounds?url=https://myurl.com/item.json")
-    assert response.status_code == 200
-    body = response.json()
-    assert len(body["bounds"]) == 4
 
 
 @patch("rio_tiler.io.rasterio.rasterio")
@@ -37,7 +26,9 @@ def test_info(httpx, rio, app):
     body = response.json()
     assert body["B01"]
 
-    response = app.get("/stac/info?url=https://myurl.com/item.json")
+    # no assets
+    with pytest.warns(UserWarning):
+        response = app.get("/stac/info?url=https://myurl.com/item.json")
     assert response.status_code == 200
     body = response.json()
     assert body["B01"]
@@ -116,7 +107,7 @@ def test_tilejson(httpx, rio, app):
     )
     assert response.status_code == 200
     body = response.json()
-    assert body["tilejson"] == "2.2.0"
+    assert body["tilejson"] == "3.0.0"
     assert body["version"] == "1.0.0"
     assert body["scheme"] == "xyz"
     assert len(body["tiles"]) == 1

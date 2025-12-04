@@ -26,13 +26,13 @@
 
 ---
 
-**Documentation**: <a href="https://devseed.com/titiler/" target="_blank">https://devseed.com/titiler/</a>
+**Documentation**: <a href="https://ds.io/titiler/" target="_blank">https://devseed.com/titiler/</a>
 
 **Source Code**: <a href="https://github.com/developmentseed/titiler" target="_blank">https://github.com/developmentseed/titiler</a>
 
 ---
 
-`Titiler`, pronounced **tee-tiler** (*ti* is the diminutive version of the french *petit* which means small), is a set of python modules that focus on creating FastAPI application for dynamic tiling.
+`TiTiler`, pronounced **tee-tiler** (*ti* is the diminutive version of the french *petit* which means small), is a set of python modules that focus on creating FastAPI application for dynamic tiling.
 
 Note: This project is the descendant of [`cogeo-tiler`](https://github.com/developmentseed/cogeo-tiler) and [`cogeo-mosaic-tiler`](https://github.com/developmentseed/cogeo-mosaic-tiler).
 
@@ -42,6 +42,7 @@ Note: This project is the descendant of [`cogeo-tiler`](https://github.com/devel
 - [Cloud Optimized GeoTIFF](http://www.cogeo.org/) support
 - [SpatioTemporal Asset Catalog](https://stacspec.org) support
 - Multiple projections support (see [TileMatrixSets](https://www.ogc.org/standards/tms)) via [`morecantile`](https://github.com/developmentseed/morecantile).
+- MultiDimensional dataset support via [Xarray](https://github.com/pydata/xarray)
 - JPEG / JP2 / PNG / WEBP / GTIFF / NumpyTile output format support
 - OGC WMTS support
 - Automatic OpenAPI documentation (FastAPI builtin)
@@ -55,6 +56,7 @@ Starting with version `0.3.0`, the `TiTiler` python module has been split into a
 | Package | Version |  Description
 | ------- | ------- |-------------
 [**titiler.core**](https://github.com/developmentseed/titiler/tree/main/src/titiler/core) | [![titiler.core](https://img.shields.io/pypi/v/titiler.core?color=%2334D058&label=pypi)](https://pypi.org/project/titiler.core) | The `Core` package contains libraries to help create a  dynamic tiler for COG and STAC
+[**titiler.xarray**](https://github.com/developmentseed/titiler/tree/main/src/titiler/xarray) | [![titiler.xarray](https://img.shields.io/pypi/v/titiler.xarray?color=%2334D058&label=pypi)](https://pypi.org/project/titiler.xarray) | The `xarray` package contains libraries to help create a  dynamic tiler for Zarr/NetCDF datasets
 [**titiler.extensions**](https://github.com/developmentseed/titiler/tree/main/src/titiler/extensions) | [![titiler.extensions](https://img.shields.io/pypi/v/titiler.extensions?color=%2334D058&label=pypi)](https://pypi.org/project/titiler.extensions) | TiTiler's extensions package. Contains extensions for Tiler Factories.
 [**titiler.mosaic**](https://github.com/developmentseed/titiler/tree/main/src/titiler/mosaic) | [![titiler.mosaic](https://img.shields.io/pypi/v/titiler.mosaic?color=%2334D058&label=pypi)](https://pypi.org/project/titiler.mosaic) | The `mosaic` package contains libraries to help create a dynamic tiler for MosaicJSON (adds `cogeo-mosaic` requirement)
 [**titiler.application**](https://github.com/developmentseed/titiler/tree/main/src/titiler/application) | [![titiler.application](https://img.shields.io/pypi/v/titiler.application?color=%2334D058&label=pypi)](https://pypi.org/project/titiler.application) | TiTiler's `demo` package. Contains a FastAPI application with full support of COG, STAC and MosaicJSON
@@ -71,6 +73,7 @@ python -m pip install -U pip
 python -m pip  install titiler.{package}
 # e.g.,
 # python -m pip  install titiler.core
+# python -m pip  install titiler.xarray
 # python -m pip  install titiler.extensions
 # python -m pip  install titiler.mosaic
 # python -m pip  install titiler.application (also installs core, extensions and mosaic)
@@ -88,11 +91,9 @@ To install from sources and run for development:
 git clone https://github.com/developmentseed/titiler.git
 cd titiler
 
-python -m pip install -U pip
-python -m pip install -e src/titiler/core -e src/titiler/extensions -e src/titiler/mosaic -e src/titiler/application
-python -m pip install uvicorn
-
-uvicorn titiler.application.main:app --reload
+uv sync
+uv run pip install uvicorn
+uv run uvicorn titiler.application.main:app --reload
 ```
 
 ## Docker
@@ -102,11 +103,11 @@ Ready to use/deploy images can be found on Github registry.
 - https://github.com/developmentseed/titiler/pkgs/container/titiler
 
 ```bash
-docker run --name titiler \
+docker run \
+    --platform=linux/amd64 \
     -p 8000:8000 \
-    --env PORT=8000 \
-    --env WORKERS_PER_CORE=1 \
-    --rm -it ghcr.io/developmentseed/titiler:latest
+    --rm -it ghcr.io/developmentseed/titiler:latest \
+    uvicorn titiler.application.main:app --host 0.0.0.0 --port 8000 --workers 1
 ```
 
 - Built the docker locally
@@ -114,10 +115,8 @@ docker run --name titiler \
 git clone https://github.com/developmentseed/titiler.git
 cd titiler
 
-docker-compose up --build titiler  # or titiler-uvicorn
+docker compose up --build titiler
 ```
-
-Some options can be set via environment variables, see: https://github.com/tiangolo/uvicorn-gunicorn-docker#advanced-usage
 
 ## Project structure
 
@@ -125,6 +124,7 @@ Some options can be set via environment variables, see: https://github.com/tiang
 src/titiler/                     - titiler modules.
  ├── application/                - Titiler's `Application` package
  ├── extensions/                 - Titiler's `Extensions` package
+ ├── xarray/                     - Titiler's `Xarray` package
  ├── core/                       - Titiler's `Core` package
  └── mosaic/                     - Titiler's `Mosaic` package
 ```

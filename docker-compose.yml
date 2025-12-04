@@ -1,5 +1,3 @@
-version: "3"
-
 services:
   titiler:
     # TODO: remove once https://github.com/rasterio/rasterio-wheels/issues/69 is resolved
@@ -7,20 +5,21 @@ services:
     platform: linux/amd64
     build:
       context: .
-      dockerfile: dockerfiles/Dockerfile.gunicorn
+      dockerfile: dockerfiles/Dockerfile
     ports:
       - "8000:8000"
+    command:
+      [
+        "uvicorn",
+        "titiler.application.main:app",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8000",
+        "--workers",
+        "1",
+      ]
     environment:
-      # Application
-      - HOST=0.0.0.0
-      - PORT=8000
-      # Gunicorn / Uvicorn
-      # https://github.com/tiangolo/uvicorn-gunicorn-docker#web_concurrency
-      - WEB_CONCURRENCY=1
-      # https://github.com/tiangolo/uvicorn-gunicorn-docker#workers_per_core
-      - WORKERS_PER_CORE=1
-      - TIMEOUT=3600
-      - GRACEFUL_TIMEOUT=3600
       # GDAL config
       - CPL_TMPDIR=/tmp
       - GDAL_CACHEMAX=75%
@@ -48,72 +47,113 @@ services:
       # - MOSAIC_CONCURRENCY= # will default to `RIO_TILER_MAX_THREADS`
       # rio-tiler config
       # - RIO_TILER_MAX_THREADS=
+      # telemetry config
+      - TITILER_API_TELEMETRY_ENABLED=True
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
+    depends_on:
+      - otel-collector
+    volumes:
+      - ./:/data
 
-  titiler-uvicorn:
-    # TODO: remove once https://github.com/rasterio/rasterio-wheels/issues/69 is resolved
-    # See https://github.com/developmentseed/titiler/discussions/387
-    platform: linux/amd64
-    build:
-      context: .
-      dockerfile: dockerfiles/Dockerfile.uvicorn
+  titiler-gunicorn:
+    extends:
+      service: titiler
     ports:
       - "8000:8000"
-    environment:
-      # Application
-      - HOST=0.0.0.0
-      - PORT=8000
-      # Uvicorn
-      # http://www.uvicorn.org/settings/#production
-      - WEB_CONCURRENCY=1
-      # GDAL config
-      - CPL_TMPDIR=/tmp
-      - GDAL_CACHEMAX=75%
-      - GDAL_INGESTED_BYTES_AT_OPEN=32768
-      - GDAL_DISABLE_READDIR_ON_OPEN=EMPTY_DIR
-      - GDAL_HTTP_MERGE_CONSECUTIVE_RANGES=YES
-      - GDAL_HTTP_MULTIPLEX=YES
-      - GDAL_HTTP_VERSION=2
-      - PYTHONWARNINGS=ignore
-      - VSI_CACHE=TRUE
-      - VSI_CACHE_SIZE=536870912
-      # GDAL VSI Config
-      # https://gdal.org/user/virtual_file_systems.html#vsis3-aws-s3-files
-      # https://gdal.org/user/virtual_file_systems.html#vsigs-google-cloud-storage-files
-      # https://gdal.org/user/virtual_file_systems.html#vsiaz-microsoft-azure-blob-files
-      # - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
-      # - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
-      # TiTiler config
-      # - TITILER_API_DISABLE_STAC=TRUE/FALSE
-      # - TITILER_API_DISABLE_MOSAIC=TRUE/FALSE
-      # - TITILER_API_DISABLE_COG=TRUE/FALSE
-      # - TITILER_API_CORS_ORIGIN=url.io,url.xyz
-      # - TITILER_API_CACHECONTROL=public, max-age=3600
-      # - TITILER_API_DEBUG=TRUE/FALSE
-      # - MOSAIC_CONCURRENCY= # will default to `RIO_TILER_MAX_THREADS`
-      # rio-tiler config
-      # - RIO_TILER_MAX_THREADS=
+    command:
+      [
+        "gunicorn",
+        "-k",
+        "uvicorn.workers.UvicornWorker",
+        "titiler.application.main:app",
+        "--bind",
+        "0.0.0.0:8000",
+        "--workers",
+        "1",
+      ]
 
   benchmark:
     extends:
-      service: titiler-uvicorn
+      service: titiler
+    environment:
+      - CPL_TMPDIR=/tmp
+      - GDAL_CACHEMAX=75%
+      - GDAL_INGESTED_BYTES_AT_OPEN=32768
+      - GDAL_DISABLE_READDIR_ON_OPEN=EMPTY_DIR
+      - GDAL_HTTP_MERGE_CONSECUTIVE_RANGES=YES
+      - GDAL_HTTP_MULTIPLEX=YES
+      - GDAL_HTTP_VERSION=2
+      - PYTHONWARNINGS=ignore
+      - VSI_CACHE=TRUE
+      - VSI_CACHE_SIZE=536870912
+      - TITILER_API_TELEMETRY_ENABLED=False
     volumes:
       - ./.github/data:/data
 
   nginx-titiler:
     extends:
       service: titiler
-    ports:
-      - 8081:8081
-    environment:
-      - PORT=8081
-      - TITILER_API_ROOT_PATH=/api/v1/titiler
+    command:
+      [
+        "uvicorn",
+        "titiler.application.main:app",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8081",
+        "--workers",
+        "1",
+        "--proxy-headers",
+        "--forwarded-allow-ips='*'",
+        "--root-path=/api/v1/titiler",
+      ]
 
   nginx:
     image: nginx
     ports:
-      - 80:80
+      - 8080:80
     volumes:
       - ./dockerfiles/nginx.conf:/etc/nginx/nginx.conf
     depends_on:
       - nginx-titiler
     command: ["nginx-debug", "-g", "daemon off;"]
+
+  titiler-xarray:
+    extends:
+      service: titiler
+    platform: linux/amd64
+    build:
+      context: .
+      dockerfile: dockerfiles/Dockerfile.xarray
+    ports:
+      - "8082:8082"
+    command:
+      [
+        "uvicorn",
+        "titiler.xarray.main:app",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8082",
+        "--workers",
+        "1",
+      ]
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:latest
+    command: ["--config=/etc/otel-collector-config.yaml"]
+    volumes:
+      - ./dockerfiles/otel-collector-config.yaml:/etc/otel-collector-config.yaml
+    ports:
+      - "4318:4318" # OTLP HTTP receiver
+      - "13133:13133" # Health check extension
+    depends_on:
+      - jaeger
+
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    ports:
+      - "16686:16686" # UI
+      - "14250:14250" # OTLP gRPC (Jaeger receiver)
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true

@@ -5,14 +5,14 @@ Core of Titiler's application. Contains blocks to create dynamic tile servers.
 ## Installation
 
 ```bash
-$ python -m pip install -U pip
+python -m pip install -U pip
 
 # From Pypi
-$ python -m pip install titiler.core
+python -m pip install titiler.core
 
 # Or from sources
-$ git clone https://github.com/developmentseed/titiler.git
-$ cd titiler && python -m pip install -e src/titiler/core
+git clone https://github.com/developmentseed/titiler.git
+cd titiler && python -m pip install -e src/titiler/core
 ```
 
 ## How To
@@ -32,8 +32,6 @@ cog = TilerFactory()
 # Register the COG endpoints to the application
 app.include_router(cog.router, tags=["Cloud Optimized GeoTIFF"])
 ```
-
-See [titiler.application](../application) for a full example.
 
 ## Package structure
 
@@ -61,5 +59,6 @@ titiler/
         ├── middleware.py        - Starlette middlewares
         ├── factory.py           - Dynamic tiler endpoints factories
         ├── routing.py           - Custom APIRoute class
+        ├── telemetry.py         - OpenTelemetry tracing functions
         └── utils.py             - Titiler utility functions
 ```

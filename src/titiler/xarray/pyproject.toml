@@ -1,0 +1,94 @@
+[project]
+name = "titiler-xarray"
+description = "Xarray plugin for TiTiler."
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [
+    {name = "Vincent Sarago", email = "vincent@developmentseed.com"},
+    {name = "Aimee Barciauskas", email = "aimee@developmentseed.com"},
+]
+license = {text = "MIT"}
+keywords = [
+    "TiTiler",
+    "Xarray",
+    "Zarr",
+    "NetCDF",
+    "HDF",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Information Technology",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: GIS",
+]
+dynamic = ["version"]
+dependencies = [
+    "titiler-core==0.26.0",
+    "rio-tiler>=7.6.1,<8.0",
+    "xarray",
+    "rioxarray",
+    "obstore",
+    "zarr>=3.1,<4.0",
+]
+
+[project.optional-dependencies]
+fs = [
+    "h5netcdf",
+    "fsspec",
+    "s3fs>=2025.2.0",
+    "aiohttp",
+    "gcsfs",
+    "requests",
+]
+telemetry = [
+    "opentelemetry-api",
+    "opentelemetry-sdk",
+    "opentelemetry-instrumentation-fastapi",
+    "opentelemetry-instrumentation-logging",
+    "opentelemetry-exporter-otlp",
+]
+
+[dependency-groups]
+test = [
+    "pytest",
+    "pytest-cov",
+    "pytest-asyncio",
+    "httpx",
+    "h5netcdf",
+    "fsspec",
+    "s3fs",
+    "aiohttp",
+    "requests",
+]
+upstream = [
+    'xarray @ git+https://github.com/pydata/xarray',
+    'universal_pathlib @ git+https://github.com/fsspec/universal_pathlib',
+    'numcodecs @ git+https://github.com/zarr-developers/numcodecs',
+    'ujson @ git+https://github.com/ultrajson/ultrajson',
+    'zarr @ git+https://github.com/zarr-developers/zarr-python',
+]
+
+[project.urls]
+Homepage = "https://developmentseed.org/titiler/"
+Documentation = "https://developmentseed.org/titiler/"
+Issues = "https://github.com/developmentseed/titiler/issues"
+Source = "https://github.com/developmentseed/titiler"
+Changelog = "https://developmentseed.org/titiler/release-notes/"
+
+[tool.hatch.version]
+path = "titiler/xarray/__init__.py"
+
+[tool.hatch.build.targets.sdist]
+only-include = ["titiler"]
+
+[tool.hatch.build.targets.wheel]
+only-include = ["titiler"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

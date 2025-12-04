@@ -12,7 +12,7 @@ from typing_extensions import Annotated, TypedDict
 from fastapi import Depends, Query, Body, Depends, Query
 from titiler.extensions.soar_util import *
 from titiler.extensions.soar_models import StacAsset, StacCatalogMetadata, StacItem, MosaicJSONMetadata
-from titiler.core.factory import BaseTilerFactory, FactoryExtension
+from titiler.core.factory import BaseFactory, FactoryExtension
 
 from cogeo_mosaic.mosaic import MosaicJSON
 from cogeo_mosaic.utils import get_dataset_info
@@ -39,7 +39,7 @@ class MosaicJSONMetadataResponse(TypedDict):
 class soarMosaicExtension(FactoryExtension):
     """Add /create endpoint to a Mosaic TilerFactory."""
 
-    def register(self, factory: BaseTilerFactory):
+    def register(self, factory: BaseFactory):
         """Register endpoint to the tiler factory."""
 
         assert pystac is not None, "'pystac' must be installed to use stacExtension"

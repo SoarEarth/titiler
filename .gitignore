@@ -107,12 +107,9 @@ ENV/
 
 cdk.out/
 deployment/k8s/titiler/values-test.yaml
-<<<<<<< HEAD
 docs/src/api/
 
 # custom Soar folder
 data
-=======
 
 .vscode/
->>>>>>> 820da86e2a8447715eecc9e9f94137142e60ce49

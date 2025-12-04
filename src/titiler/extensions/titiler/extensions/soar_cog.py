@@ -12,7 +12,7 @@ from fastapi import Depends, Query, Response
 from titiler.extensions.soar_models import COGMetadata
 from typing_extensions import Annotated
 
-from titiler.core.factory import BaseTilerFactory, FactoryExtension
+from titiler.core.factory import BaseFactory, FactoryExtension
 from titiler.core.dependencies import DefaultDependency, PreviewParams
 import os
 import morecantile
@@ -40,7 +40,7 @@ class soarCogExtension(FactoryExtension):
     img_preview_dependency: Type[DefaultDependency] = PreviewParams
 
 
-    def register(self, factory: BaseTilerFactory):
+    def register(self, factory: BaseFactory):
         """Register endpoint to the tiler factory."""
 
         assert (

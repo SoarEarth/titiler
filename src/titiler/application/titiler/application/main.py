@@ -176,6 +176,7 @@ if not api_settings.disable_mosaic:
         router_prefix="/mosaicjson",
         extensions=[
             MosaicJSONExtension(),
+            soarMosaicExtension(),
         ],
         enable_telemetry=api_settings.telemetry_enabled,
         templates=titiler_templates,

@@ -9,6 +9,8 @@ import rasterio
 import logging
 import time
 
+from pathlib import Path
+
 from fastapi import Depends, Query, Response
 from titiler.extensions.soar_models import COGMetadata
 from typing_extensions import Annotated
@@ -16,6 +18,7 @@ from typing_extensions import Annotated
 from titiler.core.factory import BaseFactory, FactoryExtension, TilerFactory
 from titiler.core.dependencies import DefaultDependency, PreviewParams
 import os
+import shutil
 import morecantile
 
 try:
@@ -62,16 +65,10 @@ class soarCogExtension(FactoryExtension):
                 ):
             """Read a COG info"""
             try:
-                print( "Reading COG metadata..." )
-                print( f"src_path: {src_path}" )
                 src_path_encoded = encode_url_path_segments(src_path)
-                print( f"src_path_encoded: {src_path_encoded}" )
                 info_cogeo = cog_info(src_path_encoded)
-                print( "COG metadata read successfully." )
-                print( f"info_cogeo: {info_cogeo}" )
-                print( f"BoundingBox: {info_cogeo.GEO.BoundingBox}" )
                 bbox = info_cogeo.GEO.BoundingBox #  Tuple[float, float, float, float]
-                
+
                 # Transform bbox to EPSG:4326 if needed
                 from rasterio.warp import transform_bounds
                 src_crs = info_cogeo.GEO.CRS
@@ -167,22 +164,60 @@ class soarCogExtension(FactoryExtension):
         )
         def translate(
             src_path: Annotated[Optional[str], Query(description="Source of the main file to translate")] = None,
+            src_url: Annotated[Optional[str], Query(description="Source url of the main file to translate")] = None,
             dest_path: Annotated[Optional[str], Query(description="Destination path to save the COG file.")] = None,
-            cog_profile: Annotated[Optional[str], Query(description="COG profile to use.")] = "zstd",
+            cog_profile: Annotated[Optional[str], Query(description="COG profile to use.")] = "webp",
         ):
             """Create COG and save into dest_path"""
             cog_profile = cog_profiles.get(cog_profile)
             src_file = F"{APP_DEST_PATH}/{src_path}"
-            dest_file = F"{APP_DEST_PATH}/{dest_path}"
+            dest_file_path = F"{APP_DEST_PATH}/{dest_path}"
+            logger.info( f"Translating to COG: src_file: {src_file}, dest_file: {dest_file_path}, profile: {cog_profile}" )
+
+            input_file_local = Path(F"/tmp/input/{src_path}")
+            input_file_local.parent.mkdir(exist_ok=True, parents=True)
+            dest_file_local = Path(F"/tmp/output/{dest_path}")
+            dest_file_local.parent.mkdir(exist_ok=True, parents=True)
+
+            if(src_url is not None):
+                # Download the file from src_url to a local temp file
+                import requests
+                response = requests.get(src_url, stream=True)
+                if response.status_code == 200:
+                    with open(input_file_local, 'wb') as out_file:
+                        shutil.copyfileobj(response.raw, out_file)
+                    logger.info( f"Downloaded source file from URL to: {input_file_local}" )
+                else:
+                    raise Exception(f"Failed to download file from URL. Status code: {response.status_code}")
+            else:
+                if not os.path.exists(src_file):
+                    raise Exception(f"Source file does not exist: {src_file}")
+                # copy source file to local temp file
+                shutil.copy(src_file, input_file_local)
+
+
+            ## print absolute paths for debugging
+            logger.info( f"Input file local path: {input_file_local.absolute()}" )
+            logger.info( f"Destination file local path: {dest_file_local.absolute()}" )
+
             tms = morecantile.tms.get("WebMercatorQuad")
             # Convert to COG with the selected profile
             cog_translate(
-                src_file,
-                dest_file,
+                input_file_local,
+                dest_file_local,
                 cog_profile,
                 use_cog_driver=True,
                 tms=tms
             )
+            dest_file = Path(dest_file_path)
+            dest_file.parent.mkdir(exist_ok=True, parents=True)
+            shutil.move(dest_file_local, dest_file)
+            try:
+                if dest_file_local.exists(): dest_file_local.unlink()
+                if input_file_local.exists(): input_file_local.unlink()
+            except Exception as e:
+                print(f"Warning: Failed to clean up temp files: {e}")
+            
             return Response('ok', media_type="text")
 
 

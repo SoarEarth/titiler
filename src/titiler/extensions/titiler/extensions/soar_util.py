@@ -183,16 +183,24 @@ def forward_to_cf(cache_key, response, zoom, x, y):
 
 def fetch_preview(src_path,preview_params: PreviewParams) -> bytes:
     url = encode_url_path_segments(src_path)
-    params = F"url={url}&access_token={api_settings.global_access_token}&max_size={preview_params.max_size}"
+    logger.info(F"Fetching preview from URL: {url}")
+    
+    req_params = {
+        "url": url,
+        "access_token": api_settings.global_access_token,
+        "max_size": preview_params.max_size
+    }
     if(preview_params.height is not None):
-        params += F"&height={preview_params.height}"
+        req_params["height"] = preview_params.height
     if(preview_params.width is not None):
-        params += F"&width={preview_params.width}"
-    response = requests.get(F"{APP_SELF_URL}/cog/preview.png?{params}", stream=True)
+        req_params["width"] = preview_params.width
+
+    response = requests.get(F"{APP_SELF_URL}/cog/preview.png", params=req_params, stream=True)
+
     if response.status_code == 200:
         return response.content
     else:
-        raise Exception(f"Failed to fetch data from the original URL. Status code: {response.status_code}")
+        raise Exception(f"Failed to fetch data from the original URL. Status code: {response.status_code}. Response: {response.text}")
 
 def save_or_post_bytes(dest_path: str, file_path: str, content: bytes) -> str:
     msg = F"dest_path [{dest_path}] or file_path [{file_path}] are not defined or are invalid"
@@ -215,8 +223,6 @@ def save_or_post_bytes(dest_path: str, file_path: str, content: bytes) -> str:
             msg = F"File saved:  {file.absolute()}"
     logger.info(msg)
     return msg
-
-
 
 def to_json(obj):
     return json.dumps(

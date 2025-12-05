@@ -2,7 +2,8 @@
 
 from dataclasses import dataclass
 from typing import List, Optional, Type
-from titiler.extensions.soar_util import APP_HOSTNAME, APP_DEST_PATH, bbox_to_tiles, exists_in_cache, fetch_tile_and_forward_to_cf_cog, save_or_post_data, to_json, fetch_preview, save_or_post_bytes, encode_url_path_segments
+from .soar_util import APP_HOSTNAME, APP_DEST_PATH, bbox_to_tiles, exists_in_cache, fetch_tile_and_forward_to_cf_cog, save_or_post_data, to_json, fetch_preview, save_or_post_bytes, encode_url_path_segments
+
 from typing_extensions import TypedDict
 import rasterio
 import logging
@@ -12,7 +13,7 @@ from fastapi import Depends, Query, Response
 from titiler.extensions.soar_models import COGMetadata
 from typing_extensions import Annotated
 
-from titiler.core.factory import BaseFactory, FactoryExtension
+from titiler.core.factory import BaseFactory, FactoryExtension, TilerFactory
 from titiler.core.dependencies import DefaultDependency, PreviewParams
 import os
 import morecantile
@@ -40,7 +41,7 @@ class soarCogExtension(FactoryExtension):
     img_preview_dependency: Type[DefaultDependency] = PreviewParams
 
 
-    def register(self, factory: BaseFactory):
+    def register(self, factory: TilerFactory):
         """Register endpoint to the tiler factory."""
 
         assert (
@@ -61,36 +62,43 @@ class soarCogExtension(FactoryExtension):
                 ):
             """Read a COG info"""
             try:
+                print( "Reading COG metadata..." )
+                print( f"src_path: {src_path}" )
                 src_path_encoded = encode_url_path_segments(src_path)
+                print( f"src_path_encoded: {src_path_encoded}" )
                 info_cogeo = cog_info(src_path_encoded)
-                with rasterio.Env(**env):
-                    with factory.reader(src_path_encoded, **reader_params) as src_dst:
-                        info = src_dst.info()
-                        bounds = info.bounds
-                        bounds_wkt = f"POLYGON(({bounds.left} {bounds.bottom}, {bounds.left} {bounds.top}, {bounds.right} {bounds.top}, {bounds.right} {bounds.bottom}, {bounds.left} {bounds.bottom}))"
-                        tile_url =  F"https://{APP_HOSTNAME}/cog/tiles/WebMercatorQuad/{{z}}/{{x}}/{{y}}.png?url={encode_url_path_segments(src_path_encoded)}"
-                        metadata: COGMetadata = {
-                            "info_cogeo": info_cogeo,
-                            "info_tiler": info,
-                            "is_valid": info_cogeo.COG,
-                            "max_zoom": info.maxzoom,
-                            "min_zoom": info.minzoom,
-                            "bounds_wkt": bounds_wkt,
-                            "tile_url": tile_url,
-                            "errors": info_cogeo.COG_errors,
-                            "warnings": info_cogeo.COG_warnings
-                        }
-                        messages = []
-                        if(metadata_path is not None):
-                            output_file_metadata = f"{metadata_path.strip('/')}/cog_metadata.json"
-                            messages.append(save_or_post_data(metadata_path, output_file_metadata, to_json(metadata)))
+                print( "COG metadata read successfully." )
+                print( f"info_cogeo: {info_cogeo}" )
+                print( f"BoundingBox: {info_cogeo.GEO.BoundingBox}" )
+                bbox = info_cogeo.GEO.BoundingBox #  Tuple[float, float, float, float]
+                
+                # Transform bbox to EPSG:4326 if needed
+                from rasterio.warp import transform_bounds
+                src_crs = info_cogeo.GEO.CRS
+                bbox_4326 = transform_bounds(src_crs, "EPSG:4326", *bbox)
+                bounds_wkt = f"POLYGON(({bbox_4326[0]} {bbox_4326[1]}, {bbox_4326[0]} {bbox_4326[3]}, {bbox_4326[2]} {bbox_4326[3]}, {bbox_4326[2]} {bbox_4326[1]}, {bbox_4326[0]} {bbox_4326[1]}))"
+                tile_url =  F"https://{APP_HOSTNAME}/cog/tiles/WebMercatorQuad/{{z}}/{{x}}/{{y}}.png?url={encode_url_path_segments(src_path_encoded)}"
+                metadata: COGMetadata = {
+                    "info_cogeo": info_cogeo,
+                    "is_valid": info_cogeo.COG,
+                    "max_zoom": info_cogeo.GEO.MaxZoom,
+                    "min_zoom": info_cogeo.GEO.MinZoom,
+                    "bounds_wkt": bounds_wkt,
+                    "tile_url": tile_url,
+                    "errors": info_cogeo.COG_errors,
+                    "warnings": info_cogeo.COG_warnings
+                }
+                messages = []
+                if(metadata_path is not None):
+                    output_file_metadata = f"{metadata_path.strip('/')}/cog_metadata.json"
+                    messages.append(save_or_post_data(metadata_path, output_file_metadata, to_json(metadata)))
 
-                        response : COGMetadataResponse = {"messages": messages}
-                        if(return_data):
-                            response["data"] = metadata
-                        else:
-                            response["data"] = None
-                        return response
+                response : COGMetadataResponse = {"messages": messages}
+                if(return_data):
+                    response["data"] = metadata
+                else:
+                    response["data"] = None
+                return response
 
             except Exception as err:
                 error_message = f"Failed to read COG metadata. {str(err)}"
@@ -119,8 +127,8 @@ class soarCogExtension(FactoryExtension):
             return_data: Annotated[bool, Query(description="Return metadata as response too")] = False,
         ):
             """Create preview and save into dest_path"""
-            src_path_encoded = encode_url_path_segments(src_path)
-            content = fetch_preview(src_path_encoded, image_params)
+            logger.info( f"Generating preview: src_path: {src_path}" )
+            content = fetch_preview(src_path, image_params)
             if(preview_path is not None):
                 output_file = f"{preview_path.strip('/')}/preview_s{image_params.max_size}.png"
                 save_or_post_bytes(preview_path, output_file, content)
@@ -143,7 +151,7 @@ class soarCogExtension(FactoryExtension):
         ):
             """Read a COG and pre-tile requested zoom level"""
             with rasterio.Env(**env):
-                with factory.reader(src_path, **reader_params) as src_dst:
+                with factory.reader(src_path, **reader_params.as_dict()) as src_dst:
                     info = src_dst.info()
                     tiles = bbox_to_tiles(info.bounds, zoom)
                     if(offset > 0):

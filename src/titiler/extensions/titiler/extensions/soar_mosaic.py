@@ -10,8 +10,8 @@ from typing import List, Optional, cast
 from typing_extensions import Annotated, TypedDict
 
 from fastapi import Depends, Query, Body, Depends, Query
-from titiler.extensions.soar_util import *
-from titiler.extensions.soar_models import StacAsset, StacCatalogMetadata, StacItem, MosaicJSONMetadata
+from .soar_util import *
+from .soar_models import StacAsset, StacCatalogMetadata, StacItem, MosaicJSONMetadata
 from titiler.core.factory import BaseFactory, FactoryExtension
 
 from cogeo_mosaic.mosaic import MosaicJSON

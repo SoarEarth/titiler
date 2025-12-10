@@ -4050,7 +4050,7 @@ wheels = [
 
 [[package]]
 name = "titiler"
-version = "0.25.0"
+version = "0.26.0"
 source = { virtual = "." }
 dependencies = [
     { name = "titiler-application" },
@@ -4257,6 +4257,7 @@ test = [
 name = "titiler-extensions"
 source = { editable = "src/titiler/extensions" }
 dependencies = [
+    { name = "requests" },
     { name = "titiler-core" },
 ]
 
@@ -4279,6 +4280,7 @@ test = [
 
 [package.metadata]
 requires-dist = [
+    { name = "requests", specifier = ">=2.32.5" },
     { name = "rio-cogeo", marker = "extra == 'cogeo'", specifier = ">=5.0,<6.0" },
     { name = "rio-stac", marker = "extra == 'stac'", specifier = ">=0.12,<0.13" },
     { name = "titiler-core", editable = "src/titiler/core" },

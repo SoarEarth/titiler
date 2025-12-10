@@ -46,7 +46,6 @@ class soarMosaicExtension(FactoryExtension):
 
         @factory.router.post(
             "/soar/createFromList", 
-            response_model=MosaicJSON, 
             responses={200: {"description": "Return created MosaicJSON"}},
         )
         def create_mosaic_json_from_list(

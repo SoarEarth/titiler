@@ -16,7 +16,8 @@ from urllib.parse import urlparse, urlencode, quote, urlunparse, parse_qsl
 logger = logging.getLogger('uvicorn.error')
 
 WEB_MERCATOR_TMS = morecantile.tms.get("WebMercatorQuad")
-APP_DEST_PATH = os.getenv("APP_DEST_PATH")
+APP_OSS_PATH = os.getenv("APP_OSS_PATH")
+APP_NAS_PATH = os.getenv("APP_NAS_PATH")
 APP_REGION = os.getenv("APP_REGION")
 APP_PROVIDER = os.getenv("APP_PROVIDER")
 APP_HOSTNAME = os.getenv("APP_HOSTNAME")
@@ -100,12 +101,12 @@ def save_or_post_data(dest_path: str, file_path: str, content: str) -> str:
             msg = F"File sent:  {dest_path}"
         else:
             logger.info(F"Saving file: {file_path}")
-            file_path_temp = F"{APP_DEST_PATH}/tmp/{file_path}"
+            file_path_temp = F"{APP_OSS_PATH}/tmp/{file_path}"
             file_temp = Path(file_path_temp)
             file_temp.parent.mkdir(exist_ok=True, parents=True)
             file_temp.write_text(content)
 
-            file = Path(F"{APP_DEST_PATH}/{file_path}")
+            file = Path(F"{APP_OSS_PATH}/{file_path}")
             file.parent.mkdir(exist_ok=True, parents=True)
             # Atomically move the temp file to the target file
             shutil.move(file_temp, file)
@@ -211,12 +212,12 @@ def save_or_post_bytes(dest_path: str, file_path: str, content: bytes) -> str:
             msg = F"File sent:  {dest_path}"
         else:
             logger.info(F"Saving file: {file_path}")
-            file_path_temp = F"{APP_DEST_PATH}/tmp/{file_path}"
+            file_path_temp = F"{APP_OSS_PATH}/tmp/{file_path}"
             file_temp = Path(file_path_temp)
             file_temp.parent.mkdir(exist_ok=True, parents=True)
             file_temp.write_bytes(content)
 
-            file = Path(F"{APP_DEST_PATH}/{file_path}")
+            file = Path(F"{APP_OSS_PATH}/{file_path}")
             file.parent.mkdir(exist_ok=True, parents=True)
             # Atomically move the temp file to the target file
             shutil.move(file_temp, file)
@@ -259,3 +260,57 @@ def encode_url_path_segments(url):
     ))
 
     return encoded_url
+
+def prepare_cog_translation(
+    src_path: str | None,
+    dest_path: str | None,
+    use_nas: bool = False,
+) -> tuple[Path, Path, str]:
+    if(src_path is None):
+        raise Exception("Either src_path or src_url must be provided.")
+    if(dest_path is None):
+        raise Exception("dest_path must be provided.")
+    
+
+    if(use_nas):
+        input_file_tmp = Path(F"{APP_NAS_PATH}/tmp/input/{src_path}")
+        dest_file_tmp = Path(F"{APP_NAS_PATH}/tmp/output/{dest_path}")
+    else:
+        input_file_tmp = Path(F"/tmp/input/{src_path}")
+        dest_file_tmp = Path(F"/tmp/output/{dest_path}")
+    
+    input_file_tmp.parent.mkdir(exist_ok=True, parents=True)
+    dest_file_tmp.parent.mkdir(exist_ok=True, parents=True)
+
+    # Copy source file to local temp file
+    if(src_path.startswith("http://") or src_path.startswith("https://")):
+        # Download the file from src_path to a local temp file
+        response = requests.get(src_path, stream=True)
+        if response.status_code == 200:
+            with open(input_file_tmp, 'wb') as out_file:
+                shutil.copyfileobj(response.raw, out_file)
+            logger.info( f"Downloaded source file from URL to: {input_file_tmp}" )
+        else:
+            raise Exception(f"Failed to download file from URL. Status code: {response.status_code}")
+    else:
+        src_file = F"{APP_OSS_PATH}/{src_path}"
+        if not os.path.exists(src_file):
+            raise Exception(f"Source file does not exist: {src_file}")
+        # copy source file to local temp file
+        shutil.copy(src_file, input_file_tmp)
+        
+    dest_file_path = F"{APP_OSS_PATH}/{dest_path}"
+    return input_file_tmp, dest_file_tmp, dest_file_path
+
+def get_cog_files_in_directory(directory: str) -> list[str]:
+    """Get all COG files in directory."""
+    full_path = F"{APP_OSS_PATH}/{directory}"
+    if not os.path.exists(full_path):
+        raise Exception(f"Directory does not exist: {full_path}")
+    cog_files = []
+    for root, _, files in os.walk(full_path):
+        for file in files:
+            if file.lower().endswith((".tif", ".tiff")):
+                cog_files.append(os.path.join(root, file))
+    return cog_files
+

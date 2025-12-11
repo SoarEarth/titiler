@@ -66,6 +66,31 @@ class soarMosaicExtension(FactoryExtension):
             if(return_result):
                 return data
             return messages
+        
+        @factory.router.get(
+            "/soar/createFromDirectory", 
+            responses={200: {"description": "Return created MosaicJSON"}},
+        )
+        def create_mosaic_json_from_directory(
+            directory: Annotated[str, Query(description="Directory containing COGs")],
+            mosaic_path: Annotated[Optional[str], Query(description="Destination path to save the MosaicJSON.")] = None,
+            return_result: Annotated[bool, Query(description="Return metadata as response too")] = False,
+        ):
+            """Create MosaicJSON from given list of COGs links."""
+            list = get_cog_files_in_directory(directory)
+            logger.info(f"Found {len(list)} COG files in directory {directory}.")
+            data: MosaicJSON = MosaicJSON.from_urls(list)
+            messages = []
+            output_file_mosaic = f"{mosaic_path}/mosaic.json"
+            
+            # if (metadata_path is not None):
+            #     messages.append(save_or_send_file(output_file_metadata, json.dumps(metadata)))
+            if(data is not None and mosaic_path is not None):
+                messages.append(save_or_post_data(output_file_mosaic, data.model_dump_json()))
+            
+            if(return_result):
+                return data
+            return messages
 
         @factory.router.get(
             "/soar/createFromStacCatalog", 
@@ -196,7 +221,7 @@ class soarMosaicExtension(FactoryExtension):
                 output_file_mosaic = f"{mosaic_path.strip('/')}/{collection.id.lower()}.json"
                 if(data is not None):
                     messages.append(save_or_post_data(mosaic_path, output_file_mosaic, data.model_dump_json()))
-                    mosaic_path = F"{APP_DEST_PATH}/{output_file_mosaic}"
+                    mosaic_path = F"{APP_OSS_PATH}/{output_file_mosaic}"
                     metadata["mosaic_path"] = mosaic_path
                     metadata["mosaic_layer_url"] = F"https://{APP_HOSTNAME}/mosaicjson/tiles/WebMercatorQuad/{{z}}/{{x}}/{{y}}.png?url={mosaic_path}"
 

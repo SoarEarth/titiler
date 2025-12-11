@@ -2,10 +2,12 @@
 
 from dataclasses import dataclass
 from typing import List, Optional, Type
-from .soar_util import APP_HOSTNAME, APP_DEST_PATH, bbox_to_tiles, exists_in_cache, fetch_tile_and_forward_to_cf_cog, save_or_post_data, to_json, fetch_preview, save_or_post_bytes, encode_url_path_segments
+from .soar_util import APP_HOSTNAME, APP_OSS_PATH, bbox_to_tiles, exists_in_cache, fetch_tile_and_forward_to_cf_cog, save_or_post_data, to_json, fetch_preview, save_or_post_bytes, encode_url_path_segments, prepare_cog_translation
 
 from typing_extensions import TypedDict
 import rasterio
+from rasterio.vrt import WarpedVRT
+from rasterio.enums import Resampling
 import logging
 import time
 
@@ -164,57 +166,66 @@ class soarCogExtension(FactoryExtension):
         )
         def translate(
             src_path: Annotated[Optional[str], Query(description="Source of the main file to translate")] = None,
-            src_url: Annotated[Optional[str], Query(description="Source url of the main file to translate")] = None,
             dest_path: Annotated[Optional[str], Query(description="Destination path to save the COG file.")] = None,
             cog_profile: Annotated[Optional[str], Query(description="COG profile to use.")] = "webp",
+            scale: Annotated[Optional[float], Query(description="Scale factor for downsampling (e.g. 0.5 for 50%).")] = None,
+            use_nas: Annotated[bool, Query(description="Use NAS for temp files.")] = False,
         ):
             """Create COG and save into dest_path"""
+            logger.info( f"Translating to COG: src_path: {src_path}, dest_path: {dest_path}, profile: {cog_profile}, scale: {scale}, use_nas: {use_nas}" )
+
+            # Copy source and dest paths to local temp files
+            input_file_tmp, dest_file_tmp, dest_file_path = prepare_cog_translation(src_path, dest_path, use_nas)
+
+            # print absolute paths for debugging
+            logger.info( f"Input file local path: {input_file_tmp.absolute()}" )
+            logger.info( f"Destination file local path: {dest_file_tmp.absolute()}" )
+
+            # Perform COG translation with optional scaling
             cog_profile = cog_profiles.get(cog_profile)
-            src_file = F"{APP_DEST_PATH}/{src_path}"
-            dest_file_path = F"{APP_DEST_PATH}/{dest_path}"
-            logger.info( f"Translating to COG: src_file: {src_file}, dest_file: {dest_file_path}, profile: {cog_profile}" )
-
-            input_file_local = Path(F"/tmp/input/{src_path}")
-            input_file_local.parent.mkdir(exist_ok=True, parents=True)
-            dest_file_local = Path(F"/tmp/output/{dest_path}")
-            dest_file_local.parent.mkdir(exist_ok=True, parents=True)
-
-            if(src_url is not None):
-                # Download the file from src_url to a local temp file
-                import requests
-                response = requests.get(src_url, stream=True)
-                if response.status_code == 200:
-                    with open(input_file_local, 'wb') as out_file:
-                        shutil.copyfileobj(response.raw, out_file)
-                    logger.info( f"Downloaded source file from URL to: {input_file_local}" )
-                else:
-                    raise Exception(f"Failed to download file from URL. Status code: {response.status_code}")
-            else:
-                if not os.path.exists(src_file):
-                    raise Exception(f"Source file does not exist: {src_file}")
-                # copy source file to local temp file
-                shutil.copy(src_file, input_file_local)
-
-
-            ## print absolute paths for debugging
-            logger.info( f"Input file local path: {input_file_local.absolute()}" )
-            logger.info( f"Destination file local path: {dest_file_local.absolute()}" )
-
             tms = morecantile.tms.get("WebMercatorQuad")
-            # Convert to COG with the selected profile
-            cog_translate(
-                input_file_local,
-                dest_file_local,
-                cog_profile,
-                use_cog_driver=True,
-                tms=tms
-            )
+            if scale and scale < 1.0:
+                with rasterio.open(input_file_tmp) as src:
+                    dst_height = int(src.height * scale)
+                    dst_width = int(src.width * scale)
+                    dst_transform = src.transform * src.transform.scale(
+                        (src.width / dst_width),
+                        (src.height / dst_height)
+                    )
+                    
+                    with WarpedVRT(
+                        src,
+                        width=dst_width,
+                        height=dst_height,
+                        transform=dst_transform,
+                        resampling=Resampling.bilinear
+                    ) as vrt:
+                        cog_translate(
+                            vrt,
+                            dest_file_tmp,
+                            cog_profile,
+                            use_cog_driver=True,
+                            tms=tms
+                        )
+            else:
+                # Convert to COG with the selected profile
+                cog_translate(
+                    input_file_tmp,
+                    dest_file_tmp,
+                    cog_profile,
+                    use_cog_driver=True,
+                    tms=tms
+                )
+
+            # Move the temp dest file to the final destination atomically
             dest_file = Path(dest_file_path)
             dest_file.parent.mkdir(exist_ok=True, parents=True)
-            shutil.move(dest_file_local, dest_file)
+            shutil.move(dest_file_tmp, dest_file)
+
+            # Clean up temp files
             try:
-                if dest_file_local.exists(): dest_file_local.unlink()
-                if input_file_local.exists(): input_file_local.unlink()
+                if dest_file_tmp.exists(): dest_file_tmp.unlink()
+                if input_file_tmp.exists(): input_file_tmp.unlink()
             except Exception as e:
                 print(f"Warning: Failed to clean up temp files: {e}")
             

@@ -22,6 +22,7 @@ from titiler.core.dependencies import DefaultDependency, PreviewParams
 import os
 import shutil
 import morecantile
+from rasterio.warp import transform_bounds
 
 try:
     from rio_cogeo.cogeo import cog_info, cog_translate
@@ -72,7 +73,6 @@ class soarCogExtension(FactoryExtension):
                 bbox = info_cogeo.GEO.BoundingBox #  Tuple[float, float, float, float]
 
                 # Transform bbox to EPSG:4326 if needed
-                from rasterio.warp import transform_bounds
                 src_crs = info_cogeo.GEO.CRS
                 bbox_4326 = transform_bounds(src_crs, "EPSG:4326", *bbox)
                 bounds_wkt = f"POLYGON(({bbox_4326[0]} {bbox_4326[1]}, {bbox_4326[0]} {bbox_4326[3]}, {bbox_4326[2]} {bbox_4326[3]}, {bbox_4326[2]} {bbox_4326[1]}, {bbox_4326[0]} {bbox_4326[1]}))"
@@ -149,16 +149,21 @@ class soarCogExtension(FactoryExtension):
             limit: Annotated[int, Query(description="Limit")] = -1,
         ):
             """Read a COG and pre-tile requested zoom level"""
-            with rasterio.Env(**env):
-                with factory.reader(src_path, **reader_params.as_dict()) as src_dst:
-                    info = src_dst.info()
-                    tiles = bbox_to_tiles(info.bounds, zoom)
-                    if(offset > 0):
-                        tiles = tiles[offset:]
-                    if(limit > 0):
-                        tiles = tiles[:limit]
-                    generate_tiles(tiles, cache_key, src_path)
-                    return F"Total of {len(tiles)} tiles were send to CF cache."
+            src_path_encoded = encode_url_path_segments(src_path)
+            info_cogeo = cog_info(src_path_encoded)
+            bbox = info_cogeo.GEO.BoundingBox #  Tuple[float, float, float, float]
+
+            # Transform bbox to EPSG:4326 if needed
+            src_crs = info_cogeo.GEO.CRS
+            bbox_4326 = transform_bounds(src_crs, "EPSG:4326", *bbox)
+            tiles = bbox_to_tiles(bbox_4326, zoom)
+            if(offset > 0):
+                tiles = tiles[offset:]
+            if(limit > 0):
+                tiles = tiles[:limit]
+            generate_tiles(tiles, cache_key, src_path)
+            return F"Total of {len(tiles)} tiles were send to CF cache."
+
 
         @factory.router.get(
             "/soar/cog_translate",

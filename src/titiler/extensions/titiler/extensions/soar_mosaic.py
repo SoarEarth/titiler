@@ -12,7 +12,7 @@ from typing_extensions import Annotated, TypedDict
 from fastapi import Depends, Query, Body, Depends, Query
 from .soar_util import *
 from .soar_models import StacAsset, StacCatalogMetadata, StacItem, MosaicJSONMetadata
-from titiler.core.factory import BaseFactory, FactoryExtension
+from titiler.core.factory import TilerFactory, FactoryExtension
 
 from cogeo_mosaic.mosaic import MosaicJSON
 from cogeo_mosaic.utils import get_dataset_info
@@ -39,7 +39,7 @@ class MosaicJSONMetadataResponse(TypedDict):
 class soarMosaicExtension(FactoryExtension):
     """Add /create endpoint to a Mosaic TilerFactory."""
 
-    def register(self, factory: BaseFactory):
+    def register(self, factory: TilerFactory):
         """Register endpoint to the tiler factory."""
 
         assert pystac is not None, "'pystac' must be installed to use stacExtension"
@@ -86,7 +86,7 @@ class soarMosaicExtension(FactoryExtension):
             # if (metadata_path is not None):
             #     messages.append(save_or_send_file(output_file_metadata, json.dumps(metadata)))
             if(data is not None and mosaic_path is not None):
-                messages.append(save_or_post_data(output_file_mosaic, data.model_dump_json()))
+                messages.append(save_or_post_data(mosaic_path, output_file_mosaic, data.model_dump_json()))
             
             if(return_result):
                 return data
@@ -248,12 +248,16 @@ class soarMosaicExtension(FactoryExtension):
             env=Depends(factory.environment_dependency),
         ):
             """Read a MosaicJSON and return z,x,y potential tiles for given zoom level"""
+            src_path_encoded = encode_url_path_segments(src_path)
             with rasterio.Env(**env):
-                with factory.reader(
-                    src_path,
+                logger.info(
+                    f"opening data with backend: {factory.backend} and reader {factory.dataset_reader}"
+                )
+                with factory.backend(
+                    src_path_encoded,
                     reader=factory.dataset_reader,
-                    reader_options={**reader_params},
-                    **backend_params,
+                    reader_options=reader_params.as_dict(),
+                    **backend_params.as_dict(),
                 ) as src_dst:
                     mosaic : MosaicJSON = src_dst.mosaic_def
                     return bbox_to_tiles(mosaic.bounds, zoom)
@@ -285,12 +289,16 @@ class soarMosaicExtension(FactoryExtension):
             env=Depends(factory.environment_dependency),
         ):
             """Read a MosaicJSON"""
+            src_path_encoded = encode_url_path_segments(src_path)
             with rasterio.Env(**env):
-                with factory.reader(
-                    src_path,
+                logger.info(
+                    f"opening data with backend: {factory.backend} and reader {factory.dataset_reader}"
+                )
+                with factory.backend(
+                    src_path_encoded,
                     reader=factory.dataset_reader,
-                    reader_options={**reader_params},
-                    **backend_params,
+                    reader_options=reader_params.as_dict(),
+                    **backend_params.as_dict(),
                 ) as src_dst:
                     mosaic : MosaicJSON = src_dst.mosaic_def
                     tiles = bbox_to_tiles(mosaic.bounds, zoom)
@@ -313,13 +321,16 @@ class soarMosaicExtension(FactoryExtension):
             """Read a MosaicJSON metadata"""
             src_path_encoded = encode_url_path_segments(src_path)
             with rasterio.Env(**env):
-                with factory.reader(
+                logger.info(
+                    f"opening data with backend: {factory.backend} and reader {factory.dataset_reader}"
+                )
+                with factory.backend(
                     src_path_encoded,
                     reader=factory.dataset_reader,
-                    reader_options={**reader_params},
-                    **backend_params,
+                    reader_options=reader_params.as_dict(),
+                    **backend_params.as_dict(),
                 ) as src_dst:
-                    info : InfoMosaic = src_dst.info()
+                    info = src_dst.mosaic_def
                     bounds = info.bounds
                     bounds_wkt = F"POLYGON(({bounds[0]} {bounds[1]}, {bounds[2]} {bounds[1]}, {bounds[2]} {bounds[3]}, {bounds[0]} {bounds[3]}, {bounds[0]} {bounds[1]}))"
                     tile_url = F"https://{APP_HOSTNAME}/mosaicjson/tiles/WebMercatorQuad/{{z}}/{{x}}/{{y}}.png?url={encode_url_path_segments(src_path_encoded)}"

@@ -1,7 +1,7 @@
 """rio-cogeo Extension."""
 
 from dataclasses import dataclass
-from typing import List, Optional, Type
+from typing import List, Optional, Type, Union
 from .soar_util import APP_HOSTNAME, APP_OSS_PATH, bbox_to_tiles, exists_in_cache, fetch_tile_and_forward_to_cf_cog, save_or_post_data, to_json, fetch_preview, save_or_post_bytes, encode_url_path_segments, prepare_cog_translation
 
 from typing_extensions import TypedDict
@@ -190,6 +190,7 @@ class soarCogExtension(FactoryExtension):
             cog_profile = cog_profiles.get(cog_profile)
             tms = morecantile.tms.get("WebMercatorQuad")
             if scale and scale < 1.0:
+                logger.info( f"Applying scaling factor: {scale}" )
                 with rasterio.open(input_file_tmp) as src:
                     dst_height = int(src.height * scale)
                     dst_width = int(src.width * scale)
@@ -197,7 +198,6 @@ class soarCogExtension(FactoryExtension):
                         (src.width / dst_width),
                         (src.height / dst_height)
                     )
-                    
                     with WarpedVRT(
                         src,
                         width=dst_width,
@@ -210,16 +210,21 @@ class soarCogExtension(FactoryExtension):
                             dest_file_tmp,
                             cog_profile,
                             use_cog_driver=True,
-                            tms=tms
+                            tms=tms,
+                            add_mask=True,
+                            nodata=0,
                         )
             else:
+                logger.info( "No scaling applied." )
                 # Convert to COG with the selected profile
                 cog_translate(
                     input_file_tmp,
                     dest_file_tmp,
                     cog_profile,
                     use_cog_driver=True,
-                    tms=tms
+                    tms=tms,
+                    add_mask=True,
+                    nodata=0,
                 )
 
             # Move the temp dest file to the final destination atomically

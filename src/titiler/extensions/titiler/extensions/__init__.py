@@ -9,3 +9,4 @@ from .viewer import cogViewerExtension, stacViewerExtension  # noqa
 from .wms import wmsExtension  # noqa
 from .soar_mosaic import soarMosaicExtension  # noqa
 from .soar_cog import soarCogExtension  # noqa
+from .nongeo import NonGeoTilerFactory  # noqa

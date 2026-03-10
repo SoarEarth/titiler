@@ -39,13 +39,11 @@ from titiler.core.resources.enums import ImageType, MediaType
 from titiler.core.resources.responses import JSONResponse
 from titiler.core.routing import EndpointScope
 from titiler.core.utils import render_image
+from .soar_util import APP_OSS_PATH, APP_NAS_PATH, encode_url_path_segments
 
 # ---------------------------------------------------------------------------
 # Path dependency that resolves local volume paths
 # ---------------------------------------------------------------------------
-
-_OSS_PATH = os.environ.get("APP_OSS_PATH", "").rstrip("/")
-_NAS_PATH = os.environ.get("APP_NAS_PATH", "").rstrip("/")
 
 _URL_SCHEMES = ("http://", "https://", "s3://", "/vsi", "file://")
 
@@ -63,10 +61,12 @@ def _resolve_local_path(url: str) -> str:
     if url.startswith("/"):
         return url
     # Relative path — anchor to the configured volume root
-    if _OSS_PATH:
-        return f"{_OSS_PATH}/{url}"
-    if _NAS_PATH:
-        return f"{_NAS_PATH}/{url}"
+    oss = (APP_OSS_PATH or "").rstrip("/")
+    nas = (APP_NAS_PATH or "").rstrip("/")
+    if oss:
+        return f"{oss}/{url}"
+    if nas:
+        return f"{nas}/{url}"
     return url
 
 
@@ -258,6 +258,7 @@ class NonGeoTilerFactory:
             env=Depends(self.environment_dependency),
         ):
             """Return pixel-space info for a non-geo dataset."""
+            src_path = encode_url_path_segments(src_path)
             with rasterio.Env(**env):
                 with ImageReader(src_path) as dst:
                     return {
@@ -323,6 +324,7 @@ class NonGeoTilerFactory:
             env=Depends(self.environment_dependency),
         ):
             """Serve a pixel-space tile from any raster (non-geo mode)."""
+            src_path = encode_url_path_segments(src_path)
             tilesize = scale * 256
             with rasterio.Env(**env):
                 with ImageReader(src_path) as dst:
@@ -418,6 +420,7 @@ class NonGeoTilerFactory:
             if qs:
                 tiles_url += f"?{urllib.parse.urlencode(qs)}"
 
+            src_path = encode_url_path_segments(src_path)
             with rasterio.Env(**env):
                 with ImageReader(src_path) as dst:
                     # bounds returned in pixel space: (0, height, width, 0)

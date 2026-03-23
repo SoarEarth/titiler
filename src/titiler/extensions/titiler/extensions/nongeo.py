@@ -28,7 +28,7 @@ from titiler.core.dependencies import (
 from titiler.core.resources.enums import ImageType
 from titiler.core.resources.responses import JSONResponse
 from titiler.core.utils import render_image
-from .soar_util import APP_OSS_PATH, APP_NAS_PATH, encode_url_path_segments
+from .soar_util import encode_url_path_segments
 
 # ---------------------------------------------------------------------------
 # Minimal dataset-params for ImageReader (no reproject_method / nodata)

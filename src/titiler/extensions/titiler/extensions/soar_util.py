@@ -17,7 +17,6 @@ logger = logging.getLogger('uvicorn.error')
 
 WEB_MERCATOR_TMS = morecantile.tms.get("WebMercatorQuad")
 APP_OSS_PATH = os.getenv("APP_OSS_PATH")
-APP_NAS_PATH = os.getenv("APP_NAS_PATH")
 APP_REGION = os.getenv("APP_REGION")
 APP_PROVIDER = os.getenv("APP_PROVIDER")
 APP_HOSTNAME = os.getenv("APP_HOSTNAME")
@@ -270,7 +269,6 @@ def encode_url_path_segments(url):
 def prepare_cog_translation(
     src_path: str | None,
     dest_path: str | None,
-    use_nas: bool = False,
 ) -> tuple[Path, Path, str]:
     if(src_path is None):
         raise Exception("Either src_path or src_url must be provided.")
@@ -278,12 +276,8 @@ def prepare_cog_translation(
         raise Exception("dest_path must be provided.")
     
 
-    if(use_nas):
-        input_file_tmp = Path(F"{APP_NAS_PATH}/tmp/input/{src_path}")
-        dest_file_tmp = Path(F"{APP_NAS_PATH}/tmp/output/{dest_path}")
-    else:
-        input_file_tmp = Path(F"/tmp/input/{src_path}")
-        dest_file_tmp = Path(F"/tmp/output/{dest_path}")
+    input_file_tmp = Path(F"/tmp/input/{src_path}")
+    dest_file_tmp = Path(F"/tmp/output/{dest_path}")
     
     input_file_tmp.parent.mkdir(exist_ok=True, parents=True)
     dest_file_tmp.parent.mkdir(exist_ok=True, parents=True)

@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 from typing import List, Optional, Type, Union
-from .soar_util import APP_HOSTNAME, APP_OSS_PATH, bbox_to_tiles, exists_in_cache, fetch_tile_and_forward_to_cf_cog, save_or_post_data, to_json, fetch_preview, save_or_post_bytes, encode_url_path_segments, prepare_cog_translation
+from .soar_util import APP_HOSTNAME, bbox_to_tiles, exists_in_cache, fetch_tile_and_forward_to_cf_cog, save_or_post_data, to_json, fetch_preview, save_or_post_bytes, encode_url_path_segments, prepare_cog_translation
 
 from typing_extensions import TypedDict
 import rasterio
@@ -174,17 +174,16 @@ class soarCogExtension(FactoryExtension):
             dest_path: Annotated[Optional[str], Query(description="Destination path to save the COG file.")] = None,
             cog_profile: Annotated[Optional[str], Query(description="COG profile to use.")] = "webp",
             scale: Annotated[Optional[float], Query(description="Scale factor for downsampling (e.g. 0.5 for 50%).")] = None,
-            use_nas: Annotated[bool, Query(description="Use NAS for temp files.")] = False,
         ):
             """Create COG and save into dest_path"""
-            logger.info( f"Translating to COG: src_path: {src_path}, dest_path: {dest_path}, profile: {cog_profile}, scale: {scale}, use_nas: {use_nas}" )
+            logger.info( f"Translating to COG: src_path: {src_path}, dest_path: {dest_path}, profile: {cog_profile}, scale: {scale}" )
 
             # Copy source and dest paths to local temp files
-            input_file_tmp, dest_file_tmp, dest_file_path = prepare_cog_translation(src_path, dest_path, use_nas)
+            input_file_tmp, dest_file_tmp, dest_file_path = prepare_cog_translation(src_path, dest_path)
 
             # print absolute paths for debugging
-            logger.info( f"Input file local path: {input_file_tmp.absolute()}" )
-            logger.info( f"Destination file local path: {dest_file_tmp.absolute()}" )
+            logger.info( f"Input file local path: {input_file_tmp}" )
+            logger.info( f"Destination file local path: {dest_file_tmp}" )
 
             # Perform COG translation with optional scaling
             cog_profile = cog_profiles.get(cog_profile)
@@ -230,12 +229,13 @@ class soarCogExtension(FactoryExtension):
             # Move the temp dest file to the final destination atomically
             dest_file = Path(dest_file_path)
             dest_file.parent.mkdir(exist_ok=True, parents=True)
+            logger.info( f"Moving translated COG to final destination: {dest_file.absolute()}" )
             shutil.move(dest_file_tmp, dest_file)
 
             # Clean up temp files
             try:
                 if dest_file_tmp.exists(): dest_file_tmp.unlink()
-                if input_file_tmp.exists(): input_file_tmp.unlink()
+                if isinstance(input_file_tmp, Path) and input_file_tmp.exists(): input_file_tmp.unlink()
             except Exception as e:
                 print(f"Warning: Failed to clean up temp files: {e}")
             

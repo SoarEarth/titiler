@@ -17,7 +17,6 @@ logger = logging.getLogger('uvicorn.error')
 
 WEB_MERCATOR_TMS = morecantile.tms.get("WebMercatorQuad")
 APP_OSS_PATH = os.getenv("APP_OSS_PATH")
-APP_NAS_PATH = os.getenv("APP_NAS_PATH")
 APP_REGION = os.getenv("APP_REGION")
 APP_PROVIDER = os.getenv("APP_PROVIDER")
 APP_HOSTNAME = os.getenv("APP_HOSTNAME")
@@ -97,7 +96,7 @@ def save_or_post_data(dest_path: str, file_path: str, content: str) -> str:
     if(dest_path is not None):
         if (dest_path.startswith("https://")):
             logger.info(F"Sending file via POST to: {dest_path}")
-            requests.post(dest_path, data=content)
+            requests.post(dest_path, data=content, timeout=60)
             msg = F"File sent:  {dest_path}"
         else:
             logger.info(F"Saving file: {file_path}")
@@ -147,7 +146,7 @@ def exists_in_cache(cache_key, zoom, x, y):
         'Content-Type': 'image/png'
     }
     cf_url = F"https://{CF_HOSTNAME}/tile-cache/exists?cacheKey={cache_key}&z={zoom}&x={x}&y={y}"
-    response = requests.get(cf_url, headers=headers)
+    response = requests.get(cf_url, headers=headers, timeout=30)
     if response.status_code == 200:
         return True
     else:
@@ -155,13 +154,19 @@ def exists_in_cache(cache_key, zoom, x, y):
 
 def fetch_tile_and_forward_to_cf_mosaic(cache_key, src_path, zoom, x, y):
     url = encode_url_path_segments(src_path)
-    response = requests.get(F"{APP_SELF_URL}/mosaicjson/tiles/WebMercatorQuad/{zoom}/{x}/{y}.png?url={url}&access_token={api_settings.global_access_token}", stream=True)
-    forward_to_cf(cache_key, response, zoom, x, y)
+    response = requests.get(F"{APP_SELF_URL}/mosaicjson/tiles/WebMercatorQuad/{zoom}/{x}/{y}.png?url={url}&access_token={api_settings.global_access_token}", stream=True, timeout=60)
+    try:
+        forward_to_cf(cache_key, response, zoom, x, y)
+    finally:
+        response.close()
 
 def fetch_tile_and_forward_to_cf_cog(cache_key, src_path, zoom, x, y):
     url = encode_url_path_segments(src_path)
-    response = requests.get(F"{APP_SELF_URL}/cog/tiles/WebMercatorQuad/{zoom}/{x}/{y}.png?url={url}&access_token={api_settings.global_access_token}", stream=True)
-    forward_to_cf(cache_key, response, zoom, x, y)
+    response = requests.get(F"{APP_SELF_URL}/cog/tiles/WebMercatorQuad/{zoom}/{x}/{y}.png?url={url}&access_token={api_settings.global_access_token}", stream=True, timeout=60)
+    try:
+        forward_to_cf(cache_key, response, zoom, x, y)
+    finally:
+        response.close()
 
 def forward_to_cf(cache_key, response, zoom, x, y):
     headers = {
@@ -171,7 +176,7 @@ def forward_to_cf(cache_key, response, zoom, x, y):
     if response.status_code == 200 or response.status_code == 204:
         # Forwarding the PNG file to the new location with new headers
         cf_url = F"https://{CF_HOSTNAME}/tile-cache?cacheKey={cache_key}&z={zoom}&x={x}&y={y}"
-        forward_response = requests.post(cf_url, headers=headers, data=response.raw)
+        forward_response = requests.post(cf_url, headers=headers, data=response.content, timeout=30)
 
         # Checking if the forward request was successful
         if forward_response.status_code != 200:
@@ -196,7 +201,7 @@ def fetch_preview(src_path,preview_params: PreviewParams) -> bytes:
     if(preview_params.width is not None):
         req_params["width"] = preview_params.width
 
-    response = requests.get(F"{APP_SELF_URL}/cog/preview.png", params=req_params, stream=True)
+    response = requests.get(F"{APP_SELF_URL}/cog/preview.png", params=req_params, timeout=120)
 
     if response.status_code == 200:
         return response.content
@@ -208,7 +213,7 @@ def save_or_post_bytes(dest_path: str, file_path: str, content: bytes) -> str:
     if(dest_path is not None):
         if (dest_path.startswith("https://")):
             logger.info(F"Sending file via POST to: {dest_path}")
-            requests.post(dest_path, data=content)
+            requests.post(dest_path, data=content, timeout=60)
             msg = F"File sent:  {dest_path}"
         else:
             logger.info(F"Saving file: {file_path}")
@@ -264,42 +269,40 @@ def encode_url_path_segments(url):
 def prepare_cog_translation(
     src_path: str | None,
     dest_path: str | None,
-    use_nas: bool = False,
 ) -> tuple[Path, Path, str]:
     if(src_path is None):
         raise Exception("Either src_path or src_url must be provided.")
     if(dest_path is None):
         raise Exception("dest_path must be provided.")
-    
 
-    if(use_nas):
-        input_file_tmp = Path(F"{APP_NAS_PATH}/tmp/input/{src_path}")
-        dest_file_tmp = Path(F"{APP_NAS_PATH}/tmp/output/{dest_path}")
-    else:
-        input_file_tmp = Path(F"/tmp/input/{src_path}")
-        dest_file_tmp = Path(F"/tmp/output/{dest_path}")
-    
-    input_file_tmp.parent.mkdir(exist_ok=True, parents=True)
+    dest_file_tmp = Path(F"/tmp/output/{dest_path}")
     dest_file_tmp.parent.mkdir(exist_ok=True, parents=True)
 
     # Copy source file to local temp file
     if(src_path.startswith("http://") or src_path.startswith("https://")):
+        input_file_tmp = Path(F"/tmp/input/{src_path}")
+        input_file_tmp.parent.mkdir(exist_ok=True, parents=True)
         # Download the file from src_path to a local temp file
-        response = requests.get(src_path, stream=True)
+        response = requests.get(src_path, stream=True, timeout=300)
         if response.status_code == 200:
             with open(input_file_tmp, 'wb') as out_file:
                 shutil.copyfileobj(response.raw, out_file)
+            response.close()
             logger.info( f"Downloaded source file from URL to: {input_file_tmp}" )
         else:
+            response.close()
             raise Exception(f"Failed to download file from URL. Status code: {response.status_code}")
+    elif(src_path.startswith("/vsioss/")):
+        input_file_tmp = src_path
+    elif(src_path.startswith(APP_OSS_PATH)):
+        input_file_tmp = src_path
     else:
-        src_file = F"{APP_OSS_PATH}/{src_path}"
-        if not os.path.exists(src_file):
-            raise Exception(f"Source file does not exist: {src_file}")
-        # copy source file to local temp file
-        shutil.copy(src_file, input_file_tmp)
-        
-    dest_file_path = F"{APP_OSS_PATH}/{dest_path}"
+        input_file_tmp = F"{APP_OSS_PATH}/{src_path}"
+
+    if(dest_path.startswith(APP_OSS_PATH)):
+        dest_file_path = dest_path
+    else:
+        dest_file_path = F"{APP_OSS_PATH}/{dest_path}"
     return input_file_tmp, dest_file_tmp, dest_file_path
 
 def get_cog_files_in_directory(directory: str) -> list[str]:

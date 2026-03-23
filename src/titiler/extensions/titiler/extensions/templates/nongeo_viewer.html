@@ -1,0 +1,111 @@
+<!doctype html>
+<html>
+
+<head>
+    <meta charset="utf-8" />
+    <title>TiTiler – Non-Geo Viewer</title>
+    <meta name="viewport" content="initial-scale=1,maximum-scale=1,user-scalable=no" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.3/dist/leaflet.css"
+        integrity="sha384-o/2yZuJZWGJ4s/adjxVW71R+EO/LyCwdQfP5UWSgX/w87iiTXuvDZaejd3TsN7mf" crossorigin="anonymous" />
+    <script src="https://unpkg.com/leaflet@1.9.3/dist/leaflet.js"
+        integrity="sha384-okbbMvvx/qfQkmiQKfd5VifbKZ/W8p1qIsWvE1ROPUfHWsDcC8/BnHohF7vPg2T6"
+        crossorigin="anonymous"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        html,
+        body {
+            width: 100%;
+            height: 100%;
+            background: #222;
+        }
+
+        #map {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            width: 100%;
+        }
+
+        #info {
+            position: absolute;
+            bottom: 10px;
+            left: 10px;
+            z-index: 1000;
+            background: rgba(0, 0, 0, 0.55);
+            color: #eee;
+            font: 12px/1.4 monospace;
+            padding: 6px 10px;
+            border-radius: 4px;
+            pointer-events: none;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="map"></div>
+    <div id="info">Loading…</div>
+
+    <script>
+        const TILEJSON_URL = "{{ tilejson_endpoint }}";
+
+        fetch(TILEJSON_URL)
+            .then(function (r) {
+                if (!r.ok) throw new Error("TileJSON request failed: " + r.status);
+                return r.json();
+            })
+            .then(function (tj) {
+                // bounds in pixel space: [left, bottom, right, top] = [0, 0, W, H]
+                var width = tj.bounds[2];
+                var height = tj.bounds[3];
+                var minZoom = tj.minzoom;
+                var maxZoom = tj.maxzoom;
+                var tileUrl = tj.tiles[0];
+
+                // Use Leaflet CRS.Simple — no geographic projection
+                var map = L.map("map", {
+                    crs: L.CRS.Simple,
+                    minZoom: minZoom - 2,
+                    maxZoom: maxZoom + 2,
+                    zoomSnap: 0.25,
+                });
+
+                // In CRS.Simple, [y, x] correspond to [lat, lng]
+                // Leaflet pixel origin puts (0,0) at top-left;
+                // we map image pixels → Leaflet latlng via: lat = -y, lng = x
+                var southWest = map.unproject([0, height], minZoom);
+                var northEast = map.unproject([width, 0], minZoom);
+                var bounds = L.latLngBounds(southWest, northEast);
+
+                L.tileLayer(tileUrl, {
+                    tileSize: 256,
+                    minZoom: minZoom,
+                    maxZoom: maxZoom,
+                    noWrap: true,
+                    bounds: bounds,
+                    attribution: tj.attribution || "",
+                }).addTo(map);
+
+                map.fitBounds(bounds);
+
+                // Show pixel coords under cursor
+                map.on("mousemove", function (e) {
+                    var pt = map.project(e.latlng, minZoom);
+                    var px = Math.round(pt.x);
+                    var py = Math.round(pt.y);
+                    document.getElementById("info").textContent =
+                        "pixel: x=" + px + ", y=" + py +
+                        "  |  zoom: " + map.getZoom().toFixed(2);
+                });
+            })
+            .catch(function (err) {
+                document.getElementById("info").textContent = "Error: " + err.message;
+            });
+    </script>
+</body>
+
+</html>

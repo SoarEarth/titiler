@@ -41,7 +41,8 @@ from titiler.extensions import (
     stacRenderExtension,
     stacViewerExtension,
     soarMosaicExtension,
-    soarCogExtension
+    soarCogExtension,
+    NonGeoTilerFactory,
 )
 from titiler.mosaic.errors import MOSAIC_STATUS_CODES
 from titiler.mosaic.extensions import MosaicJSONExtension
@@ -188,6 +189,18 @@ if not api_settings.disable_mosaic:
     )
 
     TITILER_CONFORMS_TO.update(mosaic.conforms_to)
+
+###############################################################################
+# Non-Geo endpoints (pixel-space tiling for plain images / "fake-geo" COGs)
+if not api_settings.disable_nongeo:
+    nongeo = NonGeoTilerFactory(
+        router_prefix="/nongeo",
+    )
+    app.include_router(
+        nongeo.router,
+        prefix="/nongeo",
+        tags=["Non-Geo (Pixel Space)"],
+    )
 
 ###############################################################################
 # TileMatrixSets endpoints

@@ -274,16 +274,14 @@ def prepare_cog_translation(
         raise Exception("Either src_path or src_url must be provided.")
     if(dest_path is None):
         raise Exception("dest_path must be provided.")
-    
 
-    input_file_tmp = Path(F"/tmp/input/{src_path}")
     dest_file_tmp = Path(F"/tmp/output/{dest_path}")
-    
-    input_file_tmp.parent.mkdir(exist_ok=True, parents=True)
     dest_file_tmp.parent.mkdir(exist_ok=True, parents=True)
 
     # Copy source file to local temp file
     if(src_path.startswith("http://") or src_path.startswith("https://")):
+        input_file_tmp = Path(F"/tmp/input/{src_path}")
+        input_file_tmp.parent.mkdir(exist_ok=True, parents=True)
         # Download the file from src_path to a local temp file
         response = requests.get(src_path, stream=True, timeout=300)
         if response.status_code == 200:
@@ -294,14 +292,17 @@ def prepare_cog_translation(
         else:
             response.close()
             raise Exception(f"Failed to download file from URL. Status code: {response.status_code}")
+    elif(src_path.startswith("/vsioss/")):
+        input_file_tmp = src_path
+    elif(src_path.startswith(APP_OSS_PATH)):
+        input_file_tmp = src_path
     else:
-        src_file = F"{APP_OSS_PATH}/{src_path}"
-        if not os.path.exists(src_file):
-            raise Exception(f"Source file does not exist: {src_file}")
-        # copy source file to local temp file
-        shutil.copy(src_file, input_file_tmp)
-        
-    dest_file_path = F"{APP_OSS_PATH}/{dest_path}"
+        input_file_tmp = F"{APP_OSS_PATH}/{src_path}"
+
+    if(dest_path.startswith(APP_OSS_PATH)):
+        dest_file_path = dest_path
+    else:
+        dest_file_path = F"{APP_OSS_PATH}/{dest_path}"
     return input_file_tmp, dest_file_tmp, dest_file_path
 
 def get_cog_files_in_directory(directory: str) -> list[str]:

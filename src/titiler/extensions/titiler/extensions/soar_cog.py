@@ -182,8 +182,8 @@ class soarCogExtension(FactoryExtension):
             input_file_tmp, dest_file_tmp, dest_file_path = prepare_cog_translation(src_path, dest_path)
 
             # print absolute paths for debugging
-            logger.info( f"Input file local path: {input_file_tmp.absolute()}" )
-            logger.info( f"Destination file local path: {dest_file_tmp.absolute()}" )
+            logger.info( f"Input file local path: {input_file_tmp}" )
+            logger.info( f"Destination file local path: {dest_file_tmp}" )
 
             # Perform COG translation with optional scaling
             cog_profile = cog_profiles.get(cog_profile)
@@ -229,12 +229,13 @@ class soarCogExtension(FactoryExtension):
             # Move the temp dest file to the final destination atomically
             dest_file = Path(dest_file_path)
             dest_file.parent.mkdir(exist_ok=True, parents=True)
+            logger.info( f"Moving translated COG to final destination: {dest_file.absolute()}" )
             shutil.move(dest_file_tmp, dest_file)
 
             # Clean up temp files
             try:
                 if dest_file_tmp.exists(): dest_file_tmp.unlink()
-                if input_file_tmp.exists(): input_file_tmp.unlink()
+                if isinstance(input_file_tmp, Path) and input_file_tmp.exists(): input_file_tmp.unlink()
             except Exception as e:
                 print(f"Warning: Failed to clean up temp files: {e}")
             

@@ -28,7 +28,7 @@ from titiler.core.dependencies import (
 from titiler.core.resources.enums import ImageType
 from titiler.core.resources.responses import JSONResponse
 from titiler.core.utils import render_image
-from .soar_util import encode_url_path_segments
+from .soar_util import APP_HOSTNAME, encode_url_path_segments, save_or_post_data, to_json
 
 # ---------------------------------------------------------------------------
 # Minimal dataset-params for ImageReader (no reproject_method / nodata)
@@ -89,7 +89,7 @@ img_endpoint_params: Dict[str, Any] = {
 class NonGeoTilerFactory:
     """Non-Geographic Tiler Factory.
 
-    Registers tile/info endpoints that serve any raster file via
+    Registers tile/metadata endpoints that serve any raster file via
     pixel-space (LocalTileMatrixSet) coordinates.  Uses
     ``rio_tiler.io.ImageReader`` so no CRS transformations are attempted.
 
@@ -117,30 +117,34 @@ class NonGeoTilerFactory:
 
     def __post_init__(self):
         self.router = APIRouter()
-        self.info()
+        self.metadata()
         self.tile()
 
     # ------------------------------------------------------------------
-    # /info
+    # /metadata
     # ------------------------------------------------------------------
 
-    def info(self):
-        """Register GET /info endpoint."""
+    def metadata(self):
+        """Register GET /metadata endpoint."""
 
         @self.router.get(
-            "/info",
+            "/metadata",
             response_class=JSONResponse,
             responses={200: {"description": "Return dataset's basic info."}},
         )
-        def nongeo_info(
+        def nongeo_metadata(
             src_path=Depends(self.path_dependency),
             env=Depends(self.environment_dependency),
+            metadata_path: Annotated[Optional[str], Query(description="Destination path to save the NonGeo metadata file.")] = None,
+            return_data: Annotated[bool, Query(description="Return metadata as response too")] = False,
         ):
             """Return pixel-space info for a non-geo dataset."""
             src_path = encode_url_path_segments(src_path)
+                
             with rasterio.Env(**env):
                 with ImageReader(src_path) as dst:
-                    return {
+                    tile_url =  F"https://{APP_HOSTNAME}/nongeo/tiles/{{z}}/{{x}}/{{y}}.webp?url={src_path}"
+                    metadata = {
                         "width": dst.dataset.width,
                         "height": dst.dataset.height,
                         "minzoom": dst.minzoom,
@@ -148,7 +152,19 @@ class NonGeoTilerFactory:
                         "bounds": list(dst.bounds),
                         "band_descriptions": dst.dataset.descriptions,
                         "nodata_type": "None",
+                        "tile_url": tile_url,
                     }
+                    messages = []
+                    if(metadata_path is not None):
+                        output_file_metadata = f"{metadata_path.strip('/')}/nongeo_metadata.json"
+                        messages.append(save_or_post_data(metadata_path, output_file_metadata, to_json(metadata)))
+
+                    response = {"messages": messages}
+                    if(return_data):
+                        response["data"] = metadata
+                    else:
+                        response["data"] = None
+                    return response
 
     # ------------------------------------------------------------------
     # /tiles

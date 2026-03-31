@@ -32,7 +32,7 @@ class BadRequestError(TilerError):
 
 DEFAULT_STATUS_CODES = {
     BadRequestError: status.HTTP_400_BAD_REQUEST,
-    TileOutsideBounds: status.HTTP_404_NOT_FOUND,
+    TileOutsideBounds: status.HTTP_204_NO_CONTENT,
     TileNotFoundError: status.HTTP_404_NOT_FOUND,
     RasterioIOError: status.HTTP_500_INTERNAL_SERVER_ERROR,
     MissingBands: status.HTTP_400_BAD_REQUEST,

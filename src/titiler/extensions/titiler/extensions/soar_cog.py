@@ -76,7 +76,7 @@ class soarCogExtension(FactoryExtension):
                 src_crs = info_cogeo.GEO.CRS
                 bbox_4326 = transform_bounds(src_crs, "EPSG:4326", *bbox)
                 bounds_wkt = f"POLYGON(({bbox_4326[0]} {bbox_4326[1]}, {bbox_4326[0]} {bbox_4326[3]}, {bbox_4326[2]} {bbox_4326[3]}, {bbox_4326[2]} {bbox_4326[1]}, {bbox_4326[0]} {bbox_4326[1]}))"
-                tile_url =  F"https://{APP_HOSTNAME}/cog/tiles/WebMercatorQuad/{{z}}/{{x}}/{{y}}.png?url={encode_url_path_segments(src_path_encoded)}"
+                tile_url =  F"https://{APP_HOSTNAME}/cog/tiles/WebMercatorQuad/{{z}}/{{x}}/{{y}}.webp?url={encode_url_path_segments(src_path_encoded)}"
                 metadata: COGMetadata = {
                     "info_cogeo": info_cogeo,
                     "is_valid": info_cogeo.COG,

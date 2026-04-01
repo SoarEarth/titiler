@@ -143,9 +143,9 @@ def bbox_to_tiles(bbox, zoom):
 def exists_in_cache(cache_key, zoom, x, y):
     headers = {
         'soar-secret-key': CF_SECRET,
-        'Content-Type': 'image/png'
+        'Content-Type': 'image/webp'
     }
-    cf_url = F"https://{CF_HOSTNAME}/tile-cache/exists?cacheKey={cache_key}&z={zoom}&x={x}&y={y}"
+    cf_url = F"https://{CF_HOSTNAME}/tile-cache/exists?cacheKey={cache_key}&z={zoom}&x={x}&y={y}&extension=webp"
     response = requests.get(cf_url, headers=headers, timeout=30)
     if response.status_code == 200:
         return True
@@ -154,28 +154,28 @@ def exists_in_cache(cache_key, zoom, x, y):
 
 def fetch_tile_and_forward_to_cf_mosaic(cache_key, src_path, zoom, x, y):
     url = encode_url_path_segments(src_path)
-    response = requests.get(F"{APP_SELF_URL}/mosaicjson/tiles/WebMercatorQuad/{zoom}/{x}/{y}.png?url={url}&access_token={api_settings.global_access_token}", stream=True, timeout=60)
+    response = requests.get(F"{APP_SELF_URL}/mosaicjson/tiles/WebMercatorQuad/{zoom}/{x}/{y}.webp?url={url}&access_token={api_settings.global_access_token}", stream=True, timeout=60)
     try:
-        forward_to_cf(cache_key, response, zoom, x, y)
+        forward_to_cf(cache_key, response, zoom, x, y, "webp")
     finally:
         response.close()
 
 def fetch_tile_and_forward_to_cf_cog(cache_key, src_path, zoom, x, y):
     url = encode_url_path_segments(src_path)
-    response = requests.get(F"{APP_SELF_URL}/cog/tiles/WebMercatorQuad/{zoom}/{x}/{y}.png?url={url}&access_token={api_settings.global_access_token}", stream=True, timeout=60)
+    response = requests.get(F"{APP_SELF_URL}/cog/tiles/WebMercatorQuad/{zoom}/{x}/{y}.webp?url={url}&access_token={api_settings.global_access_token}", stream=True, timeout=60)
     try:
-        forward_to_cf(cache_key, response, zoom, x, y)
+        forward_to_cf(cache_key, response, zoom, x, y, "webp")
     finally:
         response.close()
 
-def forward_to_cf(cache_key, response, zoom, x, y):
+def forward_to_cf(cache_key, response, zoom, x, y, extension):
     headers = {
         'soar-secret-key': CF_SECRET,
-        'Content-Type': 'image/png'
+        'Content-Type': f'image/{extension}'
     }
     if response.status_code == 200 or response.status_code == 204:
         # Forwarding the PNG file to the new location with new headers
-        cf_url = F"https://{CF_HOSTNAME}/tile-cache?cacheKey={cache_key}&z={zoom}&x={x}&y={y}"
+        cf_url = F"https://{CF_HOSTNAME}/tile-cache?cacheKey={cache_key}&z={zoom}&x={x}&y={y}&extension={extension}"
         forward_response = requests.post(cf_url, headers=headers, data=response.content, timeout=30)
 
         # Checking if the forward request was successful

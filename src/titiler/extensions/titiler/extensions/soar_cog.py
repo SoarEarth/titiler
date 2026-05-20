@@ -174,6 +174,7 @@ class soarCogExtension(FactoryExtension):
             dest_path: Annotated[Optional[str], Query(description="Destination path to save the COG file.")] = None,
             cog_profile: Annotated[Optional[str], Query(description="COG profile to use.")] = "webp",
             scale: Annotated[Optional[float], Query(description="Scale factor for downsampling (e.g. 0.5 for 50%).")] = None,
+            use_tms: Annotated[Optional[bool], Query(description="Whether to use TMS tiling scheme (default: false, i.e. XYZ).")] = False,
         ):
             """Create COG and save into dest_path"""
             logger.info( f"Translating to COG: src_path: {src_path}, dest_path: {dest_path}, profile: {cog_profile}, scale: {scale}" )
@@ -187,7 +188,15 @@ class soarCogExtension(FactoryExtension):
 
             # Perform COG translation with optional scaling
             cog_profile = cog_profiles.get(cog_profile)
-            tms = morecantile.tms.get("WebMercatorQuad")
+            # Adjust block size to 512 for TiTiler optimization (optional but recommended)
+            cog_profile.update(
+                dict(
+                    blockxsize=512,
+                    blockysize=512,
+                    quality=85
+                )
+            )
+            tms = morecantile.tms.get("WebMercatorQuad") if use_tms else None
             if scale and scale < 1.0:
                 logger.info( f"Applying scaling factor: {scale}" )
                 with rasterio.open(input_file_tmp) as src:

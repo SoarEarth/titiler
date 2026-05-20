@@ -175,6 +175,7 @@ class soarCogExtension(FactoryExtension):
             cog_profile: Annotated[Optional[str], Query(description="COG profile to use.")] = "webp",
             scale: Annotated[Optional[float], Query(description="Scale factor for downsampling (e.g. 0.5 for 50%).")] = None,
             use_tms: Annotated[Optional[bool], Query(description="Whether to use TMS tiling scheme (default: false, i.e. XYZ).")] = False,
+            compression_quality: Annotated[Optional[int], Query(description="Compression quality for the output COG (1-100).")] = 85,
         ):
             """Create COG and save into dest_path"""
             if scale is not None and scale <= 0:
@@ -196,7 +197,7 @@ class soarCogExtension(FactoryExtension):
                 dict(
                     blockxsize=512,
                     blockysize=512,
-                    quality=85
+                    quality=compression_quality
                 )
             )
             tms = morecantile.tms.get("WebMercatorQuad") if use_tms else None

@@ -177,6 +177,9 @@ class soarCogExtension(FactoryExtension):
             use_tms: Annotated[Optional[bool], Query(description="Whether to use TMS tiling scheme (default: false, i.e. XYZ).")] = False,
         ):
             """Create COG and save into dest_path"""
+            if scale is not None and scale <= 0:
+                raise ValueError("scale must be a positive number.")
+
             logger.info( f"Translating to COG: src_path: {src_path}, dest_path: {dest_path}, profile: {cog_profile}, scale: {scale}" )
 
             # Copy source and dest paths to local temp files
@@ -187,9 +190,9 @@ class soarCogExtension(FactoryExtension):
             logger.info( f"Destination file local path: {dest_file_tmp}" )
 
             # Perform COG translation with optional scaling
-            cog_profile = cog_profiles.get(cog_profile)
+            profile = cog_profiles.get(cog_profile)
             # Adjust block size to 512 for TiTiler optimization (optional but recommended)
-            cog_profile.update(
+            profile.update(
                 dict(
                     blockxsize=512,
                     blockysize=512,
@@ -197,58 +200,59 @@ class soarCogExtension(FactoryExtension):
                 )
             )
             tms = morecantile.tms.get("WebMercatorQuad") if use_tms else None
-            if scale and scale < 1.0:
-                logger.info( f"Applying scaling factor: {scale}" )
-                with rasterio.open(input_file_tmp) as src:
-                    dst_height = int(src.height * scale)
-                    dst_width = int(src.width * scale)
-                    dst_transform = src.transform * src.transform.scale(
-                        (src.width / dst_width),
-                        (src.height / dst_height)
-                    )
-                    with WarpedVRT(
-                        src,
-                        width=dst_width,
-                        height=dst_height,
-                        transform=dst_transform,
-                        resampling=Resampling.bilinear
-                    ) as vrt:
-                        cog_translate(
-                            vrt,
-                            dest_file_tmp,
-                            cog_profile,
-                            use_cog_driver=True,
-                            tms=tms,
-                            add_mask=True,
-                            nodata=0,
-                        )
-            else:
-                logger.info( "No scaling applied." )
-                # Convert to COG with the selected profile
-                cog_translate(
-                    input_file_tmp,
-                    dest_file_tmp,
-                    cog_profile,
-                    use_cog_driver=True,
-                    tms=tms,
-                    add_mask=True,
-                    nodata=0,
-                )
-
-            # Move the temp dest file to the final destination atomically
-            dest_file = Path(dest_file_path)
-            dest_file.parent.mkdir(exist_ok=True, parents=True)
-            logger.info( f"Moving translated COG to final destination: {dest_file.absolute()}" )
-            shutil.move(dest_file_tmp, dest_file)
-
-            # Clean up temp files
             try:
-                if dest_file_tmp.exists(): dest_file_tmp.unlink()
-                if isinstance(input_file_tmp, Path) and input_file_tmp.exists(): input_file_tmp.unlink()
-            except Exception as e:
-                print(f"Warning: Failed to clean up temp files: {e}")
-            
-            return Response('ok', media_type="text")
+                if scale and scale < 1.0:
+                    logger.info( f"Applying scaling factor: {scale}" )
+                    with rasterio.open(input_file_tmp) as src:
+                        dst_height = int(src.height * scale)
+                        dst_width = int(src.width * scale)
+                        dst_transform = src.transform * src.transform.scale(
+                            (src.width / dst_width),
+                            (src.height / dst_height)
+                        )
+                        with WarpedVRT(
+                            src,
+                            width=dst_width,
+                            height=dst_height,
+                            transform=dst_transform,
+                            resampling=Resampling.bilinear
+                        ) as vrt:
+                            cog_translate(
+                                vrt,
+                                dest_file_tmp,
+                                profile,
+                                use_cog_driver=True,
+                                tms=tms,
+                                add_mask=True,
+                                nodata=0,
+                            )
+                else:
+                    logger.info( "No scaling applied." )
+                    # Convert to COG with the selected profile
+                    cog_translate(
+                        input_file_tmp,
+                        dest_file_tmp,
+                        profile,
+                        use_cog_driver=True,
+                        tms=tms,
+                        add_mask=True,
+                        nodata=0,
+                    )
+
+                # Move the temp dest file to the final destination atomically
+                dest_file = Path(dest_file_path)
+                dest_file.parent.mkdir(exist_ok=True, parents=True)
+                logger.info( f"Moving translated COG to final destination: {dest_file.absolute()}" )
+                shutil.move(dest_file_tmp, dest_file)
+            finally:
+                # Clean up temp files on both success and failure
+                try:
+                    if dest_file_tmp.exists(): dest_file_tmp.unlink()
+                    if isinstance(input_file_tmp, Path) and input_file_tmp.exists(): input_file_tmp.unlink()
+                except Exception as e:
+                    logger.warning(f"Failed to clean up temp files: {e}")
+
+            return Response('ok', media_type="text/plain")
 
 
 def generate_tiles(tiles, cache_key, src_path):

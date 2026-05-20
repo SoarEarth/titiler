@@ -275,12 +275,19 @@ def prepare_cog_translation(
     if(dest_path is None):
         raise Exception("dest_path must be provided.")
 
-    dest_file_tmp = Path(F"/tmp/output/{dest_path}")
+    _tmp_output_root = Path("/tmp/output").resolve()
+    dest_file_tmp = (_tmp_output_root / dest_path.lstrip("/")).resolve()
+    if not str(dest_file_tmp).startswith(str(_tmp_output_root) + os.sep) and dest_file_tmp != _tmp_output_root:
+        raise ValueError("dest_path escapes the output directory.")
     dest_file_tmp.parent.mkdir(exist_ok=True, parents=True)
 
     # Copy source file to local temp file
     if(src_path.startswith("http://") or src_path.startswith("https://")):
-        input_file_tmp = Path(F"/tmp/input/{src_path}")
+        _tmp_input_root = Path("/tmp/input").resolve()
+        url_path = urlparse(src_path).path.lstrip("/")
+        input_file_tmp = (_tmp_input_root / url_path).resolve()
+        if not str(input_file_tmp).startswith(str(_tmp_input_root) + os.sep) and input_file_tmp != _tmp_input_root:
+            raise ValueError("src_path URL escapes the input directory.")
         input_file_tmp.parent.mkdir(exist_ok=True, parents=True)
         # Download the file from src_path to a local temp file
         response = requests.get(src_path, stream=True, timeout=300)
